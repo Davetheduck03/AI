@@ -14,7 +14,6 @@ namespace TowerDefenseTK
         public Dictionary<(PathNode, PathNode), List<PathNode>> generatedPathCache = new Dictionary<(PathNode, PathNode), List<PathNode>>();
         public Dictionary<(PathNode, PathNode), List<PathNode>> customPathCache = new Dictionary<(PathNode, PathNode), List<PathNode>>();
 
-
         private void OnEnable()
         {
             GridGenerator.OnGridGenerated += DelayComputePath;

@@ -12,8 +12,8 @@ namespace TowerDefenseTK
         public static GridGenerator Instance;
 
         [Header("Grid Settings")]
-        public int width = 10;
-        public int height = 10;
+        public int width = 1;
+        public int height = 1;
         public float cellSize = 1f;
 
         [Header("Node Settings")]
@@ -26,7 +26,7 @@ namespace TowerDefenseTK
             GridGenerator.Instance = this;
             GenerateGrid();
             LinkNeighbors();
-            StartCoroutine(RandomBS());
+            StartCoroutine(WaitTillEndOfFrame());
         }
 
         public void GenerateGrid()
@@ -53,8 +53,8 @@ namespace TowerDefenseTK
                     // Spawn new node
                     Vector3 worldPos = origin + new Vector3(
                         x * cellSize + cellSize / 2f,
-                        0.75f,
-                        y * cellSize + cellSize / 2f);
+                        y * cellSize + cellSize / 2f,
+                        0f);
 
                     GameObject nodeObj = Instantiate(nodePrefab, worldPos, Quaternion.identity, transform);
                     nodeObj.name = $"Node ({x},{y})";
@@ -69,7 +69,7 @@ namespace TowerDefenseTK
             }
         }
 
-        private IEnumerator RandomBS()
+        private IEnumerator WaitTillEndOfFrame()
         {
             yield return new WaitForEndOfFrame();
             OnGridGenerated?.Invoke();
@@ -100,41 +100,5 @@ namespace TowerDefenseTK
             return grid[x, y];
         }
 
-        private void OnDrawGizmos()
-        {
-            Vector3 origin = transform.position;
-
-            // Draw grid lines
-            Gizmos.color = Color.yellow;
-            for (int x = 0; x <= width; x++)
-            {
-                Vector3 start = origin + new Vector3(x * cellSize, 0, 0);
-                Vector3 end = origin + new Vector3(x * cellSize, 0, height * cellSize);
-                Gizmos.DrawLine(start, end);
-            }
-
-            for (int y = 0; y <= height; y++)
-            {
-                Vector3 start = origin + new Vector3(0, 0, y * cellSize);
-                Vector3 end = origin + new Vector3(width * cellSize, 0, y * cellSize);
-                Gizmos.DrawLine(start, end);
-            }
-
-            if (grid != null)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    for (int y = 0; y < height; y++)
-                    {
-                        PathNode node = grid[x, y];
-                        if (node != null && !node.isWalkable)
-                        {
-                            Gizmos.color = new Color(1, 0, 0, 0.5f);
-                            Gizmos.DrawCube(node.transform.position + Vector3.up * 0.01f, Vector3.one * (cellSize * 0.9f));
-                        }
-                    }
-                }
-            }
-        }
     }
 }

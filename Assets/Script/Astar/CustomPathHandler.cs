@@ -25,8 +25,8 @@ public class CustomPathHandler : MonoBehaviour
     private void Init()
     {
         var nodeGetterComponent = this.gameObject.GetComponent<NodeGetter>();
-        startNode = NodeGetter.GetNodeBelow(transform.position + Vector3.up * 1f, nodeLayer);
-        endNode = NodeGetter.GetNodeBelow(endGoal.position + Vector3.up * 1f, nodeLayer);
+        startNode = NodeGetter.GetNodeBelow(transform.position + Vector3.forward * 1f, nodeLayer);
+        endNode = NodeGetter.GetNodeBelow(endGoal.position + Vector3.forward * 1f, nodeLayer);
         pathNodes.Add(endNode);
         pathNodes.Insert(0, startNode);
         Astar.Instance.customPathCache.Add((startNode, endNode), pathNodes);

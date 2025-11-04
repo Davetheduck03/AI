@@ -26,10 +26,10 @@ public class NodeGetter : MonoBehaviour
 
     private void Init()
     {
-        PathNode nodeBelow = GetNodeBelow(transform.position + Vector3.up * 1f, nodeLayer);
+        PathNode nodeBelow = GetNodeBelow(transform.position + Vector3.forward * 1f, nodeLayer);
         if (nodeBelow == null)
         {
-            Debug.Log("Suc cac");
+            Debug.Log("node below not found");
             return;
         }
 
@@ -42,15 +42,15 @@ public class NodeGetter : MonoBehaviour
             
     }
 
-    public static PathNode GetNodeBelow(Vector3 pos, LayerMask nodeLayer)
+    public static PathNode GetNodeBelow(Vector2 pos, LayerMask nodeLayer)
     {
-        Ray ray = new Ray(pos, Vector3.down);
+        Ray ray = new Ray(pos, Vector3.back);
         if (Physics.Raycast(ray, out RaycastHit hit, 2, nodeLayer))
         {
             return hit.collider.GetComponent<PathNode>();
         }
 
-        Collider[] hits = Physics.OverlapSphere(pos, 1f, nodeLayer);
+        Collider[] hits = Physics.OverlapSphere(pos, 0.5f, nodeLayer);
         Debug.Log(hits.Length);
         foreach (var h in hits)
         {
@@ -61,8 +61,4 @@ public class NodeGetter : MonoBehaviour
         return null;
     }
 
-    private void OnDrawGizmos()
-    {
-        Gizmos.DrawLine(transform.position + Vector3.up, transform.position + Vector3.down * 2f);
-    }
 }
