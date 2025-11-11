@@ -2,63 +2,31 @@
 using TowerDefenseTK;
 using UnityEngine;
 
-public enum NodeType
-{
-    Start,
-    End
-}
 
 public class NodeGetter : MonoBehaviour
 {
-    [SerializeField] private NodeType nodeType;
-    public static Dictionary<NodeType,List<PathNode>> nodeValue = new Dictionary<NodeType, List<PathNode>>();
     [SerializeField] private LayerMask nodeLayer;
 
-    private void OnEnable()
+    public static PathNode GetClosestNode(Vector3 pos, LayerMask nodeLayer)
     {
-        GridGenerator.OnGridGenerated += Init;
-    }
+        Collider[] hits = Physics.OverlapSphere(pos, 1f, nodeLayer);
+        print(hits.Length);
+        PathNode closest = null;
+        float closestSqrDist = Mathf.Infinity;
 
-    private void OnDisable()
-    {
-        GridGenerator.OnGridGenerated -= Init;
-    }
-
-    private void Init()
-    {
-        PathNode nodeBelow = GetNodeBelow(transform.position + Vector3.forward * 1f, nodeLayer);
-        if (nodeBelow == null)
+        foreach (Collider hit in hits)
         {
-            Debug.Log("node below not found");
-            return;
-        }
+            PathNode node = hit.GetComponent<PathNode>();
+            if (node == null) continue;
 
-        if (!nodeValue.ContainsKey(nodeType))
-        {
-            nodeValue.Add(nodeType, new List<PathNode>());
+            float sqrDist = (node.transform.position - pos).sqrMagnitude;
+            if (sqrDist < closestSqrDist)
+            {
+                closestSqrDist = sqrDist;
+                closest = node;
+            }
         }
-
-        nodeValue[nodeType].Add(nodeBelow);
-            
-    }
-
-    public static PathNode GetNodeBelow(Vector2 pos, LayerMask nodeLayer)
-    {
-        Ray ray = new Ray(pos, Vector3.back);
-        if (Physics.Raycast(ray, out RaycastHit hit, 2, nodeLayer))
-        {
-            return hit.collider.GetComponent<PathNode>();
-        }
-
-        Collider[] hits = Physics.OverlapSphere(pos, 0.5f, nodeLayer);
-        Debug.Log(hits.Length);
-        foreach (var h in hits)
-        {
-            var node = h.GetComponent<PathNode>();
-            if (node != null)
-                return node;
-        }
-        return null;
+        return closest;
     }
 
 }

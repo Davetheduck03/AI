@@ -21,7 +21,7 @@ namespace TowerDefenseTK
 
             if (path != null && path.Count > 0)
                 followRoutine = StartCoroutine(FollowPath(moveSpeed));
-
+             
             Debug.Log("Path Started");
         }
 
@@ -32,7 +32,7 @@ namespace TowerDefenseTK
         {
             if (movementComp == null) return;
 
-            PathNode currentNode = NodeGetter.GetNodeBelow(transform.position + Vector3.up * 0.5f,
+            PathNode currentNode = NodeGetter.GetClosestNode(transform.position,
                                                            movementComp.nodeLayer);
             if (currentNode == null || newGoal == null) return;
 

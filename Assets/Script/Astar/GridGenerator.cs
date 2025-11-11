@@ -59,7 +59,7 @@ namespace TowerDefenseTK
                     GameObject nodeObj = Instantiate(nodePrefab, worldPos, Quaternion.identity, transform);
                     nodeObj.name = $"Node ({x},{y})";
 
-                    PathNode node = nodeObj.GetComponent<PathNode>(); // <-- 'node' only declared once here
+                    PathNode node = nodeObj.GetComponent<PathNode>();
                     node.gridPosition = new Vector2Int(x, y);
                     node.isWalkable = true;
 
