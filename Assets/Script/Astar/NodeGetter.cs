@@ -1,32 +1,31 @@
-﻿using System.Collections.Generic;
-using TowerDefenseTK;
-using UnityEngine;
-
+﻿using UnityEngine;
 
 public class NodeGetter : MonoBehaviour
 {
-    [SerializeField] private LayerMask nodeLayer;
+    public static NodeGetter Instance;
 
-    public static PathNode GetClosestNode(Vector3 pos, LayerMask nodeLayer)
+    private void Awake()
     {
-        Collider[] hits = Physics.OverlapSphere(pos, 1f, nodeLayer);
-        print(hits.Length);
+        Instance = this;
+    }
+
+    public PathNode GetClosestNode(Vector3 worldPos)
+    {
         PathNode closest = null;
-        float closestSqrDist = Mathf.Infinity;
+        float bestDist = Mathf.Infinity;
+        Vector2 pos2D = (Vector2)worldPos;
 
-        foreach (Collider hit in hits)
+        foreach (var node in Astar.Instance.allNodes)
         {
-            PathNode node = hit.GetComponent<PathNode>();
-            if (node == null) continue;
-
-            float sqrDist = (node.transform.position - pos).sqrMagnitude;
-            if (sqrDist < closestSqrDist)
+            if (!node.isWalkable) continue;
+            float dist = Vector2.Distance(pos2D, (Vector2)node.transform.position);
+            if (dist < bestDist)
             {
-                closestSqrDist = sqrDist;
+                bestDist = dist;
                 closest = node;
             }
         }
+
         return closest;
     }
-
 }

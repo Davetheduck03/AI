@@ -1,34 +1,37 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
-namespace TowerDefenseTK
+public class MovementComponent : UnitComponent
 {
+    public float movement_Speed;
+    private UnitPathFollower agent;
 
-    public class MovementComponent : UnitComponent
+    [Tooltip("Assign a Transform that represents the movement goal (e.g. the end waypoint).")]
+    public Transform targetTransform;
+
+    protected override void OnInitialize()
     {
-        public float movement_Speed;
-        private UnitPathFollower agent;
-        public LayerMask nodeLayer;
+        movement_Speed = data.Speed;
+        agent = GetComponent<UnitPathFollower>();
+    }
 
-        [Tooltip("Assign a Transform that represents the movement goal (e.g. the end waypoint).")]
-        public Transform targetTransform;
+    public void OnTriggerMove()
+    {
+        PathNode start = NodeGetter.Instance.GetClosestNode(transform.position);
+        PathNode goal = NodeGetter.Instance.GetClosestNode(targetTransform.position);
 
-        protected override void OnInitialize()
+        if (start == null || goal == null)
         {
-            movement_Speed = data.Speed;
-            agent = GetComponent<UnitPathFollower>();
+            Debug.LogError("Failed to find start or goal node!");
+            return;
         }
 
-        public void OnTriggerMove()
+        Astar.Instance.FindPath(start, goal, (path) =>
         {
-
-            PathNode start = NodeGetter.GetClosestNode(transform.position, nodeLayer);
-            PathNode goal = NodeGetter.GetClosestNode(targetTransform.position, nodeLayer);
-
-            List<PathNode> path = Astar.Instance.FindPath(start, goal);
-            Debug.Log("Computed new path.");
-            agent.SetPath(path, movement_Speed, this);
-
-        }
+            if (path != null && path.Count > 0)
+                agent.SetPath(path, movement_Speed, this);
+            else
+                Debug.Log("No path found!");
+        });
     }
 }

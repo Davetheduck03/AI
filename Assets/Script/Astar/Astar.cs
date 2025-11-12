@@ -1,81 +1,115 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-namespace TowerDefenseTK
+
+public class Astar : MonoBehaviour
 {
-    public class Astar : MonoBehaviour
+    public static Astar Instance { get; private set; }
+
+    public List<PathNode> allNodes = new List<PathNode>();
+
+    public static event Action<List<PathNode>> OnPathFound;
+
+    private void Awake()
     {
-        public static Astar Instance;
-        private void Awake() => Instance = this;
-
-        public List<PathNode> allNodes = new List<PathNode>();
-
-
-        public List<PathNode> FindPath(PathNode start, PathNode goal)
+        if (Instance != null && Instance != this)
         {
-            var openSet = new List<PathNode>();
-            var closedSet = new HashSet<PathNode>();
-            openSet.Add(start);
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+    }
 
-            foreach (var node in allNodes)
+        public void FindPath(PathNode start, PathNode goal)
+        {
+            StartCoroutine(FindPathRoutine(start, goal, path => OnPathFound?.Invoke(path)));
+        }
+
+        // 2. CALLBACK VERSION (use this when you need the path NOW)
+        public void FindPath(PathNode start, PathNode goal, System.Action<List<PathNode>> onComplete)
+        {
+            StartCoroutine(FindPathRoutine(start, goal, onComplete));
+        }
+
+        private IEnumerator FindPathRoutine(PathNode start, PathNode goal, System.Action<List<PathNode>> onComplete)
+        {
+            List<PathNode> path = CalculatePath(start, goal);
+            yield return null;
+            onComplete?.Invoke(path);
+        }
+    
+
+    private List<PathNode> CalculatePath(PathNode start, PathNode goal)
+    {
+        var openSet = new List<PathNode>();
+        var closedSet = new HashSet<PathNode>();
+
+        // Reset all nodes
+        foreach (var node in allNodes)
+        {
+            node.gCost = Mathf.Infinity;
+            node.parent = null;
+        }
+
+        openSet.Add(start);
+        start.gCost = 0;
+        start.hCost = Heuristic(start, goal);
+
+        while (openSet.Count > 0)
+        {
+            var current = openSet.OrderBy(n => n.fCost).First();
+            openSet.Remove(current);
+            closedSet.Add(current);
+
+            if (current == goal)
             {
-                node.gCost = Mathf.Infinity;
-                node.hCost = 0;
-                node.parent = null;
+                return ReconstructPath(goal); // Success!
             }
 
-            start.gCost = 0;
-            start.hCost = Heuristic(start, goal);
-
-            while (openSet.Count > 0)
+            foreach (var neighbor in current.neighbors)
             {
-                var current = openSet.OrderBy(n => n.fCost).First();
+                if (closedSet.Contains(neighbor) || !neighbor.isWalkable)
+                    continue;
 
-                openSet.Remove(current);
-                closedSet.Add(current);
+                float tentativeG = current.gCost + Vector2.Distance(
+                    (Vector2)current.transform.position,
+                    (Vector2)neighbor.transform.position);
 
-                foreach (var neighbor in current.neighbors)
+                if (tentativeG < neighbor.gCost)
                 {
-                    if (closedSet.Contains(neighbor) || !neighbor.isWalkable)
-                        continue;
+                    neighbor.parent = current;
+                    neighbor.gCost = tentativeG;
+                    neighbor.hCost = Heuristic(neighbor, goal);
 
-                    float tentativeG = current.gCost + Vector3.Distance(current.transform.position, neighbor.transform.position);
-
-                    if (tentativeG < neighbor.gCost)
-                    {
-                        neighbor.parent = current;
-                        neighbor.gCost = tentativeG;
-                        neighbor.hCost = Heuristic(neighbor, goal);
-
-                        if (!openSet.Contains(neighbor))
-                            openSet.Add(neighbor);
-                    }
+                    if (!openSet.Contains(neighbor))
+                        openSet.Add(neighbor);
                 }
             }
-
-            return null;
         }
 
-        private float Heuristic(PathNode a, PathNode b)
-        {
-            return Vector3.Distance(a.transform.position, b.transform.position);
-        }
-
-        private List<PathNode> ReconstructPath(PathNode start, PathNode goal)
-        {
-            List<PathNode> path = new List<PathNode>();
-            PathNode current = goal;
-
-            while (current != null)
-            {
-                path.Add(current);
-                current = current.parent;
-            }
-
-            path.Reverse();
-            return path;
-        }
-
+        return new List<PathNode>();
     }
+
+    private List<PathNode> ReconstructPath(PathNode endNode)
+    {
+        var path = new List<PathNode>();
+        var current = endNode;
+
+        while (current != null)
+        {
+            path.Add(current);
+            current = current.parent;
+        }
+
+        path.Reverse();
+        return path;
+    }
+
+    private float Heuristic(PathNode a, PathNode b)
+    {
+        return Vector2.Distance((Vector2)a.transform.position, (Vector2)b.transform.position);
+    }
+    
 }
