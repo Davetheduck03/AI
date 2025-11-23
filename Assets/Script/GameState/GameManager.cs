@@ -46,14 +46,6 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
-        if(Input.GetKeyDown(KeyCode.Space))
-        {
-            foreach(var enemy in FindObjectsByType<MovementComponent>(FindObjectsSortMode.None))
-            {
-                enemy.OnTriggerMove();
-            }
-        }
-
         if (currentState == null)
         {
             return;

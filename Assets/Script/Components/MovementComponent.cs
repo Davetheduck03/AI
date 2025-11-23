@@ -6,8 +6,6 @@ public class MovementComponent : UnitComponent
     public float movement_Speed;
     private UnitPathFollower agent;
 
-    [Tooltip("Assign a Transform that represents the movement goal (e.g. the end waypoint).")]
-    public Transform targetTransform;
 
     protected override void OnInitialize()
     {
@@ -15,10 +13,12 @@ public class MovementComponent : UnitComponent
         agent = GetComponent<UnitPathFollower>();
     }
 
-    public void OnTriggerMove()
+    public void OnTriggerMove(Transform self, Transform target)
     {
-        PathNode start = NodeGetter.Instance.GetClosestNode(transform.position);
-        PathNode goal = NodeGetter.Instance.GetClosestNode(targetTransform.position);
+        PathNode start = NodeGetter.Instance.GetClosestNode(self.position);
+        PathNode goal = NodeGetter.Instance.GetClosestNode(target.position);
+
+        Debug.Log("Path Found");
 
         if (start == null || goal == null)
         {

@@ -43,7 +43,6 @@ public class HealthComponent : UnitComponent
         {
             Die();
         }
-
     }
 
     private void Die()

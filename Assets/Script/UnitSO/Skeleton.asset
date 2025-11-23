@@ -15,7 +15,7 @@ MonoBehaviour:
   UnitName: Skeleton
   UnitPrefab: {fileID: 0}
   Icon: {fileID: 0}
-  Health: 100
+  Health: 10
   Speed: 2
   goldReward: 150
   damage: 2
