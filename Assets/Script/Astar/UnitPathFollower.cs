@@ -79,8 +79,9 @@ public class UnitPathFollower : MonoBehaviour
                     }
                 }
 
-                // Move in 2D
-                transform.position = (Vector3)currentPos + (Vector3)(direction * moveSpeed * Time.deltaTime);
+                Vector2 pos = transform.position;
+                pos += direction * moveSpeed * Time.deltaTime;
+                transform.position = pos;
 
                 yield return null;
             }

@@ -13,7 +13,6 @@ public class BehaviorTreeRunner : MonoBehaviour
     {
         bb = new Blackboard();
         bb.Set("self", transform);
-        bb.Set("target", target);
 
         root = BuildTree();  // Build instance here
     }

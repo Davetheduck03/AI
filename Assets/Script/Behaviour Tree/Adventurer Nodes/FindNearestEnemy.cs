@@ -8,7 +8,6 @@ using UnityEngine;
 public class FindNearestEnemy : Node
 {
     private float maxDetectionRange = 20f;
-    private LayerMask enemyLayer = -1;  // Or set to Enemy layer
 
     public FindNearestEnemy(Blackboard bb, float range = 20f) : base(bb)
     {
