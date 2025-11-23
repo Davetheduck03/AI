@@ -2462,6 +2462,7 @@ GameObject:
   - component: {fileID: 1444508584}
   - component: {fileID: 1444508585}
   - component: {fileID: 1444508586}
+  - component: {fileID: 1444508587}
   m_Layer: 0
   m_Name: Hero_01
   m_TagString: Untagged
@@ -2640,6 +2641,18 @@ CircleCollider2D:
   m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
   m_Radius: 0.2
+--- !u!114 &1444508587
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1444508578}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f5f697b61e2837d47a38bf95b9d8e9ef, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1643393975
 GameObject:
   m_ObjectHideFlags: 0
