@@ -8,7 +8,6 @@ public class KnightAI : BehaviorTreeRunner
     {
         var root = new Selector(bb);
 
-        // Attack/Chase branch
         var attackSeq = new Sequence(bb);
         attackSeq.AddChild(new FindNearestEnemy(bb, 5f));
         attackSeq.AddChild(new MoveTowardsTarget(bb, 4f, 1f));
@@ -17,6 +16,7 @@ public class KnightAI : BehaviorTreeRunner
         root.AddChild(attackSeq);
 
         var wanderingSeq = new Sequence(bb);
+
 
         return root;
     }

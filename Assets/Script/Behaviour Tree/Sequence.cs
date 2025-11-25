@@ -12,7 +12,6 @@ public class Sequence : Node
 
     public override NodeState Evaluate()
     {
-        // Resume from last index
         for (; currentIndex < children.Count; ++currentIndex)
         {
             NodeState childState = children[currentIndex].Evaluate();
@@ -29,7 +28,6 @@ public class Sequence : Node
             }
         }
 
-        // All children succeeded
         currentIndex = 0;
         return NodeState.Success;
     }

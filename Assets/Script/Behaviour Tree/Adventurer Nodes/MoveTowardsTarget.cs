@@ -27,16 +27,16 @@ public class MoveTowardsTarget : Node
 
         if (!hasStartedMoving)
         {
+            Transform closestNode = target;
             self.GetComponent<MovementComponent>().OnTriggerMove(self, target);
             hasStartedMoving = true;
         }
 
         float distance = Vector3.Distance(self.position, target.position);
 
-        // SUCCESS: Already close enough - stop and let next node (e.g., Attack) take over
         if (distance <= approachRange)
         {
-            Debug.Log("Reached approach range - Success!");
+            self.GetComponent<UnitPathFollower>().StopAllCoroutines();
             return NodeState.Success;
         }
 
