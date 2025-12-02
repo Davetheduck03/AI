@@ -15,7 +15,13 @@ public class KnightAI : BehaviorTreeRunner
         attackSeq.AddChild(new AttackTarget(bb, 5f, 5f, 1f, enemyLayer));
         root.AddChild(attackSeq);
 
+        var lootSeq = new Sequence(bb);
+        lootSeq.AddChild(new FindLootInRange(bb, 8f));
+        lootSeq.AddChild(new MoveTowardsTarget(bb, 3 , 0f));
+        root.AddChild(lootSeq);
+
         var wanderingSeq = new Sequence(bb);
+
 
 
         return root;
