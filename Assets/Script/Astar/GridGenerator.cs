@@ -8,18 +8,15 @@ public class GridGenerator : MonoBehaviour
     public static event Action OnGridGenerated;
     public static GridGenerator Instance;
 
-    [Header("Grid Settings")]
-    public int width = 1;
-    public int height = 1;
-    public float cellSize = 1f;
-
     [Header("Tilemap Settings")]
     public Tilemap walkableTilemap;
 
     [Header("Node Settings")]
     public GameObject nodePrefab;
+    public float cellSize = 1f;
 
     private PathNode[,] grid;
+    private Vector2Int gridOffset; // To handle negative tilemap positions
 
     private void Start()
     {
@@ -31,70 +28,52 @@ public class GridGenerator : MonoBehaviour
 
     public void GenerateGrid()
     {
-        // Ensure grid array exists and matches current dimensions
-        if (grid == null || grid.GetLength(0) != width || grid.GetLength(1) != height)
-            grid = new PathNode[width, height];
-
-        Vector3 origin = transform.position;
-
-        for (int x = 0; x < width; x++)
+        if (walkableTilemap == null)
         {
-            for (int y = 0; y < height; y++)
+            Debug.LogError("Walkable Tilemap is not assigned!");
+            return;
+        }
+
+        // Get the bounds of the tilemap
+        BoundsInt bounds = walkableTilemap.cellBounds;
+
+        // Store offset to handle negative positions
+        gridOffset = new Vector2Int(bounds.xMin, bounds.yMin);
+
+        // Initialize grid based on tilemap bounds
+        int width = bounds.size.x;
+        int height = bounds.size.y;
+        grid = new PathNode[width, height];
+
+        // Iterate through all positions in the tilemap bounds
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            for (int y = bounds.yMin; y < bounds.yMax; y++)
             {
-                // Check if this position has a walkable tile
-                if (!IsTileWalkable(x, y))
-                {
-                    grid[x, y] = null; // Mark as non-walkable
+                Vector3Int cellPos = new Vector3Int(x, y, 0);
+                TileBase tile = walkableTilemap.GetTile(cellPos);
+
+                // Only create nodes where tiles exist
+                if (tile == null)
                     continue;
-                }
 
-                // Reuse existing node if already present
-                if (grid[x, y] != null)
-                {
-                    PathNode existingNode = grid[x, y];
-                    existingNode.isWalkable = true;
-                    existingNode.gridPosition = new Vector2Int(x, y);
-                    continue; // Skip instantiation
-                }
+                // Convert tilemap position to grid array indices
+                int gridX = x - bounds.xMin;
+                int gridY = y - bounds.yMin;
 
-                // Spawn new node only for walkable tiles
-                Vector3 worldPos = origin + new Vector3(
-                    x * cellSize + cellSize / 2f,
-                    y * cellSize + cellSize / 2f,
-                    0f);
+                // Get world position from tilemap
+                Vector3 worldPos = walkableTilemap.GetCellCenterWorld(cellPos);
 
+                // Spawn new node
                 GameObject nodeObj = Instantiate(nodePrefab, worldPos, Quaternion.identity, transform);
                 nodeObj.name = $"Node ({x},{y})";
                 PathNode node = nodeObj.GetComponent<PathNode>();
-                node.gridPosition = new Vector2Int(x, y);
+                node.gridPosition = new Vector2Int(x, y); // Store actual tilemap coordinates
                 node.isWalkable = true;
-                grid[x, y] = node;
+                grid[gridX, gridY] = node;
                 Astar.Instance.allNodes.Add(node);
             }
         }
-    }
-
-    private bool IsTileWalkable(int gridX, int gridY)
-    {
-        if (walkableTilemap == null)
-        {
-            Debug.LogWarning("Walkable Tilemap is not assigned!");
-            return true; // Fallback to spawning all nodes
-        }
-
-        // Convert grid position to world position (center of cell)
-        Vector3 origin = transform.position;
-        Vector3 worldPos = origin + new Vector3(
-            gridX * cellSize + cellSize / 2f,
-            gridY * cellSize + cellSize / 2f,
-            0f);
-
-        // Convert world position to cell position in tilemap
-        Vector3Int cellPos = walkableTilemap.WorldToCell(worldPos);
-
-        // Check if there's a tile at this cell position
-        TileBase tile = walkableTilemap.GetTile(cellPos);
-        return tile != null;
     }
 
     private IEnumerator WaitTillEndOfFrame()
@@ -105,6 +84,12 @@ public class GridGenerator : MonoBehaviour
 
     private void LinkNeighbors()
     {
+        if (grid == null)
+            return;
+
+        int width = grid.GetLength(0);
+        int height = grid.GetLength(1);
+
         for (int x = 0; x < width; x++)
         {
             for (int y = 0; y < height; y++)
@@ -116,6 +101,7 @@ public class GridGenerator : MonoBehaviour
 
                 node.neighbors.Clear();
 
+                // Check all 4 directions
                 if (x > 0 && grid[x - 1, y] != null)
                     node.neighbors.Add(grid[x - 1, y]);
 
@@ -131,10 +117,21 @@ public class GridGenerator : MonoBehaviour
         }
     }
 
-    public PathNode GetNodeAt(int x, int y)
+    public PathNode GetNodeAt(int tilemapX, int tilemapY)
     {
-        if (x < 0 || y < 0 || x >= width || y >= height)
+        // Convert tilemap coordinates to grid array indices
+        int gridX = tilemapX - gridOffset.x;
+        int gridY = tilemapY - gridOffset.y;
+
+        if (gridX < 0 || gridY < 0 || gridX >= grid.GetLength(0) || gridY >= grid.GetLength(1))
             return null;
-        return grid[x, y];
+
+        return grid[gridX, gridY];
+    }
+
+    public PathNode GetNodeAtWorldPosition(Vector3 worldPos)
+    {
+        Vector3Int cellPos = walkableTilemap.WorldToCell(worldPos);
+        return GetNodeAt(cellPos.x, cellPos.y);
     }
 }
