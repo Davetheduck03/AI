@@ -1,5 +1,10 @@
 using UnityEngine;
 
+/// <summary>
+/// Knight AI with fog cluster-based exploration.
+/// Better for open/corridor maps than room detection.
+/// Priority: Attack > Loot > Large fog clusters (if healthy) > Any fog
+/// </summary>
 public class KnightAI : BehaviorTreeRunner
 {
     [SerializeField] private LayerMask enemyLayer;
@@ -13,8 +18,8 @@ public class KnightAI : BehaviorTreeRunner
         attackSeq.AddChild(new FindNearestEnemy(bb, 15f));
         attackSeq.AddChild(new IsTargetRevealed(bb));
         attackSeq.AddChild(new MoveTowardsTarget(bb, 1f));
-        attackSeq.AddChild(new IsInAttackRange(bb));
-        attackSeq.AddChild(new AttackTarget(bb, 5f, 5f, 1f, enemyLayer));
+        attackSeq.AddChild(new IsInAttackRange(bb, 5f));
+        attackSeq.AddChild(new AttackTarget(bb, 5f, 1f, enemyLayer));
         root.AddChild(attackSeq);
 
         // Priority 2: Collect revealed loot
@@ -24,11 +29,17 @@ public class KnightAI : BehaviorTreeRunner
         lootSeq.AddChild(new MoveTowardsTarget(bb, 0f));
         root.AddChild(lootSeq);
 
-        // Priority 3: Explore unrevealed areas
-        var exploreSeq = new Sequence(bb);
-        exploreSeq.AddChild(new FindUnexploredArea(bb, 100f));
-        exploreSeq.AddChild(new MoveTowardsTarget(bb, 2f));
-        root.AddChild(exploreSeq);
+        // Priority 3: Explore fog clusters (health-aware)
+        var clusterSeq = new Sequence(bb);
+        clusterSeq.AddChild(new FindFogCluster(bb, 100f));
+        clusterSeq.AddChild(new MoveTowardsTarget(bb, 2f));
+        root.AddChild(clusterSeq);
+
+        // Priority 4: Fallback to basic exploration
+        var basicExploreSeq = new Sequence(bb);
+        basicExploreSeq.AddChild(new FindUnexploredArea(bb, 100f));
+        basicExploreSeq.AddChild(new MoveTowardsTarget(bb, 2f));
+        root.AddChild(basicExploreSeq);
 
         return root;
     }

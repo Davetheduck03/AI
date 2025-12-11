@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// Composite: Selector (Fallback) - Succeeds on first Success child.

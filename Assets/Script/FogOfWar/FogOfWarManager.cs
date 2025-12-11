@@ -3,8 +3,8 @@ using UnityEngine.Tilemaps;
 using System.Collections.Generic;
 
 /// <summary>
-/// FIXED: Prevents oscillation in narrow entrances by marking nearby tiles as explored.
-/// When AI gets close to target, mark surrounding area as explored to avoid re-targeting.
+/// Enhanced FogOfWarManager with Field of View support.
+/// Can reveal fog in circular or cone-shaped patterns.
 /// </summary>
 public class FogOfWarManager : MonoBehaviour
 {
@@ -22,17 +22,16 @@ public class FogOfWarManager : MonoBehaviour
     [SerializeField] private LayerMask visionBlockingLayers;
 
     [Header("Exploration Settings")]
-    [Tooltip("Minimum distance between exploration targets to avoid oscillation")]
     [SerializeField] private float explorationSpacing = 8f;
+    [SerializeField] private int maxFailedSearches = 3;
 
-    // Track revealed tiles
     private Dictionary<Vector3Int, bool> revealedTiles = new Dictionary<Vector3Int, bool>();
     private HashSet<Vector3Int> allTilePositions = new HashSet<Vector3Int>();
     private HashSet<Vector3Int> walkableTilePositions = new HashSet<Vector3Int>();
 
-    // Track recently targeted positions to avoid re-targeting
     private List<Vector3> recentTargets = new List<Vector3>();
     private const int maxRecentTargets = 5;
+    private int consecutiveFailedSearches = 0;
 
     private void Start()
     {
@@ -52,7 +51,6 @@ public class FogOfWarManager : MonoBehaviour
         allTilePositions.Clear();
         walkableTilePositions.Clear();
 
-        // Cover walkable tiles with fog
         BoundsInt walkableBounds = walkableTilemap.cellBounds;
         foreach (Vector3Int pos in walkableBounds.allPositionsWithin)
         {
@@ -64,7 +62,6 @@ public class FogOfWarManager : MonoBehaviour
             }
         }
 
-        // Cover wall tiles with fog
         BoundsInt wallsBounds = wallsTilemap.cellBounds;
         foreach (Vector3Int pos in wallsBounds.allPositionsWithin)
         {
@@ -75,7 +72,7 @@ public class FogOfWarManager : MonoBehaviour
             }
         }
 
-        Debug.Log($"Fog initialized: {allTilePositions.Count} total tiles ({walkableTilePositions.Count} walkable)");
+        Debug.Log($"Fog initialized: {allTilePositions.Count} total ({walkableTilePositions.Count} walkable)");
     }
 
     private void PlaceFogTile(Vector3Int cellPos)
@@ -91,6 +88,9 @@ public class FogOfWarManager : MonoBehaviour
         fogTilemap.SetTile(cellPos, null);
     }
 
+    /// <summary>
+    /// Original circular reveal method.
+    /// </summary>
     public void RevealFogAroundPosition(Vector3 worldPosition)
     {
         Vector3Int centerCell = fogTilemap.WorldToCell(worldPosition);
@@ -116,6 +116,47 @@ public class FogOfWarManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// NEW: Reveal fog in a cone/sector (Field of View).
+    /// </summary>
+    public void RevealFogInCone(Vector3 worldPosition, Vector2 facingDirection, float range, float fovAngle)
+    {
+        Vector3Int centerCell = fogTilemap.WorldToCell(worldPosition);
+        int radius = Mathf.CeilToInt(range);
+        float halfAngle = fovAngle / 2f;
+
+        for (int x = -radius; x <= radius; x++)
+        {
+            for (int y = -radius; y <= radius; y++)
+            {
+                Vector3Int checkPos = centerCell + new Vector3Int(x, y, 0);
+
+                if (!allTilePositions.Contains(checkPos)) continue;
+                if (revealedTiles.TryGetValue(checkPos, out bool isRevealed) && isRevealed) continue;
+
+                Vector3 checkWorldPos = fogTilemap.GetCellCenterWorld(checkPos);
+                Vector2 offset = checkWorldPos - worldPosition;
+                float distance = offset.magnitude;
+
+                // Check range
+                if (distance > range) continue;
+
+                // Check if within FOV angle
+                if (distance > 0.1f)  // Skip angle check for center tile
+                {
+                    float angleToPoint = Vector2.Angle(facingDirection, offset);
+                    if (angleToPoint > halfAngle) continue;
+                }
+
+                // Check line of sight
+                if (HasLineOfSight(worldPosition, checkWorldPos))
+                {
+                    RemoveFogTile(checkPos);
+                }
+            }
+        }
+    }
+
     private bool HasLineOfSight(Vector3 from, Vector3 to)
     {
         Vector2 direction = (to - from).normalized;
@@ -130,10 +171,30 @@ public class FogOfWarManager : MonoBehaviour
         return revealedTiles.TryGetValue(cellPos, out bool revealed) && revealed;
     }
 
-    /// <summary>
-    /// Get nearest walkable unrevealed position, avoiding recently targeted areas.
-    /// </summary>
     public Vector3? GetNearestUnrevealedPosition(Vector3 fromPosition)
+    {
+        Vector3? nearest = GetNearestUnrevealedWithSpacing(fromPosition, true);
+
+        if (nearest.HasValue)
+        {
+            consecutiveFailedSearches = 0;
+            return nearest;
+        }
+
+        consecutiveFailedSearches++;
+
+        if (consecutiveFailedSearches >= maxFailedSearches)
+        {
+            Debug.Log("Clearing recent targets!");
+            ClearRecentTargets();
+            consecutiveFailedSearches = 0;
+            return GetNearestUnrevealedWithSpacing(fromPosition, false);
+        }
+
+        return GetNearestUnrevealedWithSpacing(fromPosition, false);
+    }
+
+    private Vector3? GetNearestUnrevealedWithSpacing(Vector3 fromPosition, bool useSpacing)
     {
         Vector3? nearest = null;
         float closestDist = float.MaxValue;
@@ -145,8 +206,7 @@ public class FogOfWarManager : MonoBehaviour
 
             Vector3 worldPos = fogTilemap.GetCellCenterWorld(kvp.Key);
 
-            // NEW: Skip if too close to a recent target (prevents oscillation)
-            if (IsTooCloseToRecentTarget(worldPos)) continue;
+            if (useSpacing && IsTooCloseToRecentTarget(worldPos)) continue;
 
             float dist = Vector3.Distance(fromPosition, worldPos);
 
@@ -160,9 +220,6 @@ public class FogOfWarManager : MonoBehaviour
         return nearest;
     }
 
-    /// <summary>
-    /// Check if position is too close to recently targeted positions.
-    /// </summary>
     private bool IsTooCloseToRecentTarget(Vector3 position)
     {
         foreach (Vector3 recentTarget in recentTargets)
@@ -175,28 +232,33 @@ public class FogOfWarManager : MonoBehaviour
         return false;
     }
 
-    /// <summary>
-    /// Register a position as recently targeted (called by exploration node).
-    /// </summary>
     public void RegisterExplorationTarget(Vector3 targetPosition)
     {
         recentTargets.Add(targetPosition);
 
-        // Keep list small
         if (recentTargets.Count > maxRecentTargets)
         {
             recentTargets.RemoveAt(0);
         }
-
-        Debug.Log($"Registered exploration target: {targetPosition} (total: {recentTargets.Count})");
     }
 
-    /// <summary>
-    /// Clear recent targets (useful for resetting exploration).
-    /// </summary>
     public void ClearRecentTargets()
     {
         recentTargets.Clear();
+        consecutiveFailedSearches = 0;
+    }
+
+    public int GetUnrevealedCount()
+    {
+        int count = 0;
+        foreach (var kvp in revealedTiles)
+        {
+            if (!kvp.Value && walkableTilePositions.Contains(kvp.Key))
+            {
+                count++;
+            }
+        }
+        return count;
     }
 
     public List<Vector3> GetUnrevealedPositions()
@@ -219,21 +281,5 @@ public class FogOfWarManager : MonoBehaviour
     {
         Vector3Int cellPos = fogTilemap.WorldToCell(worldPosition);
         return walkableTilePositions.Contains(cellPos);
-    }
-
-    private void OnDrawGizmosSelected()
-    {
-        if (Application.isPlaying)
-        {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(transform.position, visionRadius);
-
-            // Draw recent targets
-            Gizmos.color = Color.red;
-            foreach (Vector3 target in recentTargets)
-            {
-                Gizmos.DrawWireSphere(target, explorationSpacing);
-            }
-        }
     }
 }

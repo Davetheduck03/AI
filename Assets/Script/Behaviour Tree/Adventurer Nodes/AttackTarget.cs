@@ -13,9 +13,8 @@ public class AttackTarget : Node
     private float lastAttackTime = 0f;
     private LayerMask targetLayer;
 
-    public AttackTarget(Blackboard bb, float damage = 25f, float range = 2f, float cooldown = 1f, LayerMask targetLayer = default) : base(bb)
+    public AttackTarget(Blackboard bb, float range = 2f, float cooldown = 1f, LayerMask targetLayer = default) : base(bb)
     {
-        this.damage = damage;
         this.attackRange = range;
         this.attackCooldown = cooldown;
         this.targetLayer = targetLayer;

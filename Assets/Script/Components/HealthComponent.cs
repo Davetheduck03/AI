@@ -6,14 +6,16 @@ using UnityEngine;
 
 public class HealthComponent : UnitComponent
 {
-    private float currentHealth;
+    public float currentHealth;
     public float currentArmour;
     public bool isDamagable;
+    public float maxHealth;
 
 
     protected override void OnInitialize()
     {
-        currentHealth = data.Health;
+        maxHealth = data.Health;
+        currentHealth = maxHealth;
         isDamagable = true;
         currentArmour = data.armor;
     }
