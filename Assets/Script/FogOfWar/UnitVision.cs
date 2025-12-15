@@ -2,6 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Unit vision with Field of View support.
+/// Passes its own vision settings to FogOfWarManager.
 /// Can reveal fog in a cone/sector instead of full circle.
 /// </summary>
 public class UnitVision : MonoBehaviour
@@ -9,12 +10,12 @@ public class UnitVision : MonoBehaviour
     [Header("Vision Settings")]
     [SerializeField] private float visionRange = 5f;
     [SerializeField] private float updateInterval = 0.2f;
-    [SerializeField] private LayerMask obstacleMask;  // Layers that block vision (e.g., walls)
+    [SerializeField] private LayerMask visionBlockingLayers;  // Walls that block vision
 
     [Header("Field of View")]
-    [SerializeField] private bool useFOV = true;
+    [SerializeField] private bool useFOV = false;  // Set true for cone vision
     [SerializeField] private float fovAngle = 90f;  // 90 = quarter circle, 180 = half circle, 360 = full circle
-    [SerializeField] private bool faceMovementDirection = true;  // Auto-rotate to face movement
+    [SerializeField] private bool faceMovementDirection = true;  // Auto-rotate FOV to face movement
 
     [Header("Debug")]
     [SerializeField] private bool showDebugGizmos = true;
@@ -47,12 +48,23 @@ public class UnitVision : MonoBehaviour
         {
             if (useFOV)
             {
-                RevealFogInFOV();
+                // Reveal fog in cone - passes OUR settings to manager
+                fogManager.RevealFogInCone(
+                    transform.position,
+                    facingDirection,
+                    visionRange,
+                    fovAngle,
+                    visionBlockingLayers
+                );
             }
             else
             {
-                // Original circular vision
-                fogManager.RevealFogAroundPosition(transform.position);
+                // Reveal fog in circle - passes OUR settings to manager
+                fogManager.RevealFogAroundPosition(
+                    transform.position,
+                    visionRange,
+                    visionBlockingLayers
+                );
             }
 
             lastUpdateTime = Time.time;
@@ -79,60 +91,6 @@ public class UnitVision : MonoBehaviour
     }
 
     /// <summary>
-    /// Reveal fog only within the field of view cone.
-    /// </summary>
-    private void RevealFogInFOV()
-    {
-        Vector3 position = transform.position;
-
-        // Use FogOfWarManager's method but only for tiles in FOV
-        // We need a custom reveal method
-        RevealFogInCone(position, facingDirection, visionRange, fovAngle);
-    }
-
-    /// <summary>
-    /// Custom fog reveal that checks if tiles are within FOV cone.
-    /// </summary>
-    private void RevealFogInCone(Vector3 center, Vector2 direction, float range, float angle)
-    {
-        // Get all positions that could be visible
-        int radius = Mathf.CeilToInt(range);
-
-        for (int x = -radius; x <= radius; x++)
-        {
-            for (int y = -radius; y <= radius; y++)
-            {
-                Vector2 offset = new Vector2(x, y);
-                Vector3 checkPos = center + new Vector3(offset.x, offset.y, 0);
-
-                float distance = offset.magnitude;
-                if (distance > range) continue;  // Outside range
-
-                // Check if within FOV angle
-                if (!IsInFOV(offset, direction, angle)) continue;
-
-                // Check line of sight (walls block vision)
-                if (!VisionUtilities.HasLineOfSight(center, checkPos, obstacleMask)) continue;
-
-                // Reveal this tile via FogOfWarManager
-                fogManager.RevealFogAroundPosition(checkPos);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Check if a position offset is within the FOV cone.
-    /// </summary>
-    private bool IsInFOV(Vector2 offset, Vector2 direction, float angle)
-    {
-        if (offset.magnitude < 0.01f) return true;  // Always see own tile
-
-        float angleToPoint = Vector2.Angle(direction, offset);
-        return angleToPoint <= angle / 2f;
-    }
-
-
-    /// <summary>
     /// Manually set facing direction (if not using movement direction).
     /// </summary>
     public void SetFacingDirection(Vector2 direction)
@@ -149,7 +107,7 @@ public class UnitVision : MonoBehaviour
     }
 
     /// <summary>
-    /// Force immediate fog update.
+    /// Force immediate fog update (useful after teleporting).
     /// </summary>
     public void ForceUpdateFog()
     {
@@ -157,11 +115,21 @@ public class UnitVision : MonoBehaviour
         {
             if (useFOV)
             {
-                RevealFogInFOV();
+                fogManager.RevealFogInCone(
+                    transform.position,
+                    facingDirection,
+                    visionRange,
+                    fovAngle,
+                    visionBlockingLayers
+                );
             }
             else
             {
-                fogManager.RevealFogAroundPosition(transform.position);
+                fogManager.RevealFogAroundPosition(
+                    transform.position,
+                    visionRange,
+                    visionBlockingLayers
+                );
             }
         }
     }
@@ -171,40 +139,49 @@ public class UnitVision : MonoBehaviour
     /// </summary>
     private void OnDrawGizmos()
     {
-        if (!showDebugGizmos || !Application.isPlaying || !useFOV) return;
+        if (!showDebugGizmos || !Application.isPlaying) return;
 
         Vector3 position = transform.position;
 
-        // Draw FOV cone
-        Gizmos.color = visionColor;
-
-        // Calculate cone edges
-        float halfAngle = fovAngle / 2f;
-        Vector2 leftEdge = RotateVector(facingDirection, -halfAngle);
-        Vector2 rightEdge = RotateVector(facingDirection, halfAngle);
-
-        // Draw cone lines
-        Gizmos.DrawLine(position, position + (Vector3)(leftEdge * visionRange));
-        Gizmos.DrawLine(position, position + (Vector3)(rightEdge * visionRange));
-        Gizmos.DrawLine(position, position + (Vector3)(facingDirection * visionRange));
-
-        // Draw arc (approximate with segments)
-        int segments = 20;
-        Vector3 prevPoint = position + (Vector3)(leftEdge * visionRange);
-
-        for (int i = 1; i <= segments; i++)
+        if (useFOV)
         {
-            float angle = -halfAngle + (fovAngle * i / segments);
-            Vector2 direction = RotateVector(facingDirection, angle);
-            Vector3 point = position + (Vector3)(direction * visionRange);
+            // Draw FOV cone
+            Gizmos.color = visionColor;
 
-            Gizmos.DrawLine(prevPoint, point);
-            prevPoint = point;
+            // Calculate cone edges
+            float halfAngle = fovAngle / 2f;
+            Vector2 leftEdge = RotateVector(facingDirection, -halfAngle);
+            Vector2 rightEdge = RotateVector(facingDirection, halfAngle);
+
+            // Draw cone lines
+            Gizmos.DrawLine(position, position + (Vector3)(leftEdge * visionRange));
+            Gizmos.DrawLine(position, position + (Vector3)(rightEdge * visionRange));
+            Gizmos.DrawLine(position, position + (Vector3)(facingDirection * visionRange));
+
+            // Draw arc (approximate with segments)
+            int segments = 20;
+            Vector3 prevPoint = position + (Vector3)(leftEdge * visionRange);
+
+            for (int i = 1; i <= segments; i++)
+            {
+                float angle = -halfAngle + (fovAngle * i / segments);
+                Vector2 direction = RotateVector(facingDirection, angle);
+                Vector3 point = position + (Vector3)(direction * visionRange);
+
+                Gizmos.DrawLine(prevPoint, point);
+                prevPoint = point;
+            }
+
+            // Draw facing direction arrow
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawRay(position, (Vector3)(facingDirection * visionRange));
         }
-
-        // Draw facing direction arrow
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawRay(position, (Vector3)(facingDirection * visionRange));
+        else
+        {
+            // Draw circular vision
+            Gizmos.color = visionColor;
+            DrawCircle(position, visionRange, 32);
+        }
     }
 
     /// <summary>
@@ -220,5 +197,24 @@ public class UnitVision : MonoBehaviour
             vector.x * cos - vector.y * sin,
             vector.x * sin + vector.y * cos
         );
+    }
+
+    /// <summary>
+    /// Draw a circle gizmo.
+    /// </summary>
+    private void DrawCircle(Vector3 center, float radius, int segments)
+    {
+        float angleStep = 360f / segments;
+        Vector3 prevPoint = center + new Vector3(radius, 0, 0);
+
+        for (int i = 1; i <= segments; i++)
+        {
+            float angle = angleStep * i;
+            float rad = angle * Mathf.Deg2Rad;
+            Vector3 newPoint = center + new Vector3(Mathf.Cos(rad) * radius, Mathf.Sin(rad) * radius, 0);
+
+            Gizmos.DrawLine(prevPoint, newPoint);
+            prevPoint = newPoint;
+        }
     }
 }

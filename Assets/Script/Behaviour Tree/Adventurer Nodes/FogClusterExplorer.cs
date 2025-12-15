@@ -18,7 +18,6 @@ public class FogClusterExplorer : MonoBehaviour
     [SerializeField] private float sampleDistance = 3f;  // Distance between sample points
 
     [Header("Priority Settings")]
-    [SerializeField] private bool prioritizeLargerClusters = true;
     [SerializeField] private float healthThreshold = 0.5f;  // Health required to explore large clusters
 
     private void Start()
@@ -65,9 +64,7 @@ public class FogClusterExplorer : MonoBehaviour
         }
 
         // Get best cluster (largest if prioritizing, nearest otherwise)
-        FogCluster bestCluster = prioritizeLargerClusters
-            ? validClusters.OrderByDescending(c => c.size).First()
-            : validClusters.OrderBy(c => c.distanceFromPlayer).First();
+        FogCluster bestCluster = validClusters.OrderBy(c => c.distanceFromPlayer).First();
 
         Debug.Log($"FogClusterExplorer: Targeting cluster of {bestCluster.size} tiles at {bestCluster.center}");
         return bestCluster.center;

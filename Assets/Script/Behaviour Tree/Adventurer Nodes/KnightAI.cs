@@ -15,7 +15,7 @@ public class KnightAI : BehaviorTreeRunner
 
         // Priority 1: Attack revealed enemies
         var attackSeq = new Sequence(bb);
-        attackSeq.AddChild(new FindNearestEnemy(bb, 15f));
+        attackSeq.AddChild(new FindNearestEnemy(bb, 5f));
         attackSeq.AddChild(new IsTargetRevealed(bb));
         attackSeq.AddChild(new MoveTowardsTarget(bb, 1f));
         attackSeq.AddChild(new IsInAttackRange(bb, 5f));
@@ -24,7 +24,7 @@ public class KnightAI : BehaviorTreeRunner
 
         // Priority 2: Collect revealed loot
         var lootSeq = new Sequence(bb);
-        lootSeq.AddChild(new FindLootInRange(bb, 10f));
+        lootSeq.AddChild(new FindLootInRange(bb, 5f));
         lootSeq.AddChild(new IsTargetRevealed(bb));
         lootSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         lootSeq.AddChild(new LootTarget(bb));
@@ -32,14 +32,14 @@ public class KnightAI : BehaviorTreeRunner
 
         // Priority 3: Explore fog clusters (health-aware)
         var clusterSeq = new Sequence(bb);
-        clusterSeq.AddChild(new FindFogCluster(bb, 100f));
-        clusterSeq.AddChild(new MoveTowardsTarget(bb, 1f));
+        clusterSeq.AddChild(new FindFogCluster(bb, 20f));
+        clusterSeq.AddChild(new MoveTowardsTarget(bb, 2.5f));
         root.AddChild(clusterSeq);
 
         // Priority 4: Fallback to basic exploration
         var basicExploreSeq = new Sequence(bb);
-        basicExploreSeq.AddChild(new FindUnexploredArea(bb, 100f));
-        basicExploreSeq.AddChild(new MoveTowardsTarget(bb, 1f));
+        basicExploreSeq.AddChild(new FindUnexploredArea(bb, 20f));
+        basicExploreSeq.AddChild(new MoveTowardsTarget(bb, 2.5f));
         root.AddChild(basicExploreSeq);
 
         return root;

@@ -3,8 +3,8 @@ using UnityEngine.Tilemaps;
 using System.Collections.Generic;
 
 /// <summary>
-/// Enhanced FogOfWarManager with Field of View support.
-/// Can reveal fog in circular or cone-shaped patterns.
+/// FogOfWarManager - Handles fog placement and revealing.
+/// Walls BLOCK vision (can't see through) but REVEAL when close (walk near).
 /// </summary>
 public class FogOfWarManager : MonoBehaviour
 {
@@ -13,22 +13,24 @@ public class FogOfWarManager : MonoBehaviour
     [SerializeField] private Tilemap wallsTilemap;
     [SerializeField] private Tilemap fogTilemap;
 
-    [Header("Fog Settings")]
+    [Header("Fog Appearance")]
     [SerializeField] private TileBase fogTile;
     [SerializeField] private Color fogColor = new Color(0, 0, 0, 0.8f);
 
-    [Header("Vision Settings")]
-    [SerializeField] private float visionRadius = 5f;
-    [SerializeField] private LayerMask visionBlockingLayers;
+    [Header("Wall Reveal Settings")]
+    [SerializeField] private float wallRevealDistance = 1.5f;  // How close to reveal walls
 
     [Header("Exploration Settings")]
     [SerializeField] private float explorationSpacing = 8f;
     [SerializeField] private int maxFailedSearches = 3;
 
+    // Tile tracking
     private Dictionary<Vector3Int, bool> revealedTiles = new Dictionary<Vector3Int, bool>();
     private HashSet<Vector3Int> allTilePositions = new HashSet<Vector3Int>();
     private HashSet<Vector3Int> walkableTilePositions = new HashSet<Vector3Int>();
+    private HashSet<Vector3Int> wallTilePositions = new HashSet<Vector3Int>();
 
+    // Exploration tracking
     private List<Vector3> recentTargets = new List<Vector3>();
     private const int maxRecentTargets = 5;
     private int consecutiveFailedSearches = 0;
@@ -50,7 +52,9 @@ public class FogOfWarManager : MonoBehaviour
         revealedTiles.Clear();
         allTilePositions.Clear();
         walkableTilePositions.Clear();
+        wallTilePositions.Clear();
 
+        // Add fog to walkable tiles
         BoundsInt walkableBounds = walkableTilemap.cellBounds;
         foreach (Vector3Int pos in walkableBounds.allPositionsWithin)
         {
@@ -62,17 +66,20 @@ public class FogOfWarManager : MonoBehaviour
             }
         }
 
+        // Add fog to wall tiles
         BoundsInt wallsBounds = wallsTilemap.cellBounds;
         foreach (Vector3Int pos in wallsBounds.allPositionsWithin)
         {
             if (wallsTilemap.HasTile(pos))
             {
                 allTilePositions.Add(pos);
+                wallTilePositions.Add(pos);
                 PlaceFogTile(pos);
             }
         }
 
-        Debug.Log($"Fog initialized: {allTilePositions.Count} total ({walkableTilePositions.Count} walkable)");
+        Debug.Log($"Fog initialized: {allTilePositions.Count} total tiles " +
+                  $"({walkableTilePositions.Count} walkable, {wallTilePositions.Count} walls)");
     }
 
     private void PlaceFogTile(Vector3Int cellPos)
@@ -89,48 +96,72 @@ public class FogOfWarManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Original circular reveal method.
+    /// Reveal fog around a position.
+    /// Walls BLOCK line of sight but REVEAL if within wallRevealDistance.
     /// </summary>
-    public void RevealFogAroundPosition(Vector3 worldPosition)
+    public void RevealFogAroundPosition(Vector3 worldPosition, float radius, LayerMask visionBlockingLayers)
     {
         Vector3Int centerCell = fogTilemap.WorldToCell(worldPosition);
-        int radius = Mathf.CeilToInt(visionRadius);
+        int checkRadius = Mathf.CeilToInt(radius);
 
-        for (int x = -radius; x <= radius; x++)
+        for (int x = -checkRadius; x <= checkRadius; x++)
         {
-            for (int y = -radius; y <= radius; y++)
+            for (int y = -checkRadius; y <= checkRadius; y++)
             {
                 Vector3Int checkPos = centerCell + new Vector3Int(x, y, 0);
 
+                // Must be a valid tile
                 if (!allTilePositions.Contains(checkPos)) continue;
+
+                // Skip if already revealed
                 if (revealedTiles.TryGetValue(checkPos, out bool isRevealed) && isRevealed) continue;
 
                 Vector3 checkWorldPos = fogTilemap.GetCellCenterWorld(checkPos);
                 float distance = Vector2.Distance(worldPosition, checkWorldPos);
 
-                if (distance <= visionRadius && VisionUtilities.HasLineOfSight(worldPosition, checkWorldPos, visionBlockingLayers))
+                // Check if in range
+                if (distance > radius) continue;
+
+                bool isWall = wallTilePositions.Contains(checkPos);
+
+                if (isWall)
                 {
-                    RemoveFogTile(checkPos);
+                    // WALLS: Reveal only if very close (ignore line of sight for walls themselves)
+                    if (distance <= wallRevealDistance)
+                    {
+                        RemoveFogTile(checkPos);
+                    }
+                }
+                else
+                {
+                    // WALKABLE TILES: Check line of sight (walls block this)
+                    if (VisionUtilities.HasLineOfSight(worldPosition, checkWorldPos, visionBlockingLayers))
+                    {
+                        RemoveFogTile(checkPos);
+                    }
                 }
             }
         }
     }
 
     /// <summary>
-    /// NEW: Reveal fog in a cone/sector (Field of View).
+    /// Reveal fog in a cone/sector (Field of View).
+    /// Walls block vision but reveal when close.
     /// </summary>
-    public void RevealFogInCone(Vector3 worldPosition, Vector2 facingDirection, float range, float fovAngle)
+    public void RevealFogInCone(Vector3 worldPosition, Vector2 facingDirection, float range,
+                                float fovAngle, LayerMask visionBlockingLayers)
     {
         Vector3Int centerCell = fogTilemap.WorldToCell(worldPosition);
-        int radius = Mathf.CeilToInt(range);
+        int checkRadius = Mathf.CeilToInt(range);
         float halfAngle = fovAngle / 2f;
 
-        for (int x = -radius; x <= radius; x++)
+        for (int x = -checkRadius; x <= checkRadius; x++)
         {
-            for (int y = -radius; y <= radius; y++)
+            for (int y = -checkRadius; y <= checkRadius; y++)
             {
                 Vector3Int checkPos = centerCell + new Vector3Int(x, y, 0);
 
+                // Must be valid tile
                 if (!allTilePositions.Contains(checkPos)) continue;
                 if (revealedTiles.TryGetValue(checkPos, out bool isRevealed) && isRevealed) continue;
 
@@ -148,21 +179,40 @@ public class FogOfWarManager : MonoBehaviour
                     if (angleToPoint > halfAngle) continue;
                 }
 
-                // Check line of sight
-                if (VisionUtilities.HasLineOfSight(worldPosition, checkWorldPos, visionBlockingLayers))
+                bool isWall = wallTilePositions.Contains(checkPos);
+
+                if (isWall)
                 {
-                    RemoveFogTile(checkPos);
+                    // WALLS: Reveal only if very close
+                    if (distance <= wallRevealDistance)
+                    {
+                        RemoveFogTile(checkPos);
+                    }
+                }
+                else
+                {
+                    // WALKABLE TILES: Check line of sight
+                    if (VisionUtilities.HasLineOfSight(worldPosition, checkWorldPos, visionBlockingLayers))
+                    {
+                        RemoveFogTile(checkPos);
+                    }
                 }
             }
         }
     }
 
+    /// <summary>
+    /// Check if a position is revealed (no fog).
+    /// </summary>
     public bool IsRevealed(Vector3 worldPosition)
     {
         Vector3Int cellPos = fogTilemap.WorldToCell(worldPosition);
         return revealedTiles.TryGetValue(cellPos, out bool revealed) && revealed;
     }
 
+    /// <summary>
+    /// Get nearest unrevealed WALKABLE position for exploration.
+    /// </summary>
     public Vector3? GetNearestUnrevealedPosition(Vector3 fromPosition)
     {
         Vector3? nearest = GetNearestUnrevealedWithSpacing(fromPosition, true);
@@ -193,7 +243,10 @@ public class FogOfWarManager : MonoBehaviour
 
         foreach (var kvp in revealedTiles)
         {
+            // Skip revealed tiles
             if (kvp.Value) continue;
+
+            // Only return WALKABLE unrevealed tiles
             if (!walkableTilePositions.Contains(kvp.Key)) continue;
 
             Vector3 worldPos = fogTilemap.GetCellCenterWorld(kvp.Key);
@@ -240,6 +293,9 @@ public class FogOfWarManager : MonoBehaviour
         consecutiveFailedSearches = 0;
     }
 
+    /// <summary>
+    /// Get count of unrevealed WALKABLE tiles.
+    /// </summary>
     public int GetUnrevealedCount()
     {
         int count = 0;
@@ -253,6 +309,9 @@ public class FogOfWarManager : MonoBehaviour
         return count;
     }
 
+    /// <summary>
+    /// Get list of unrevealed WALKABLE positions.
+    /// </summary>
     public List<Vector3> GetUnrevealedPositions()
     {
         List<Vector3> unrevealed = new List<Vector3>();
@@ -269,9 +328,28 @@ public class FogOfWarManager : MonoBehaviour
         return unrevealed;
     }
 
+    /// <summary>
+    /// Check if a world position is on a walkable tile.
+    /// </summary>
     public bool IsWalkable(Vector3 worldPosition)
     {
         Vector3Int cellPos = fogTilemap.WorldToCell(worldPosition);
         return walkableTilePositions.Contains(cellPos);
+    }
+
+    /// <summary>
+    /// Get total fog coverage percentage.
+    /// </summary>
+    public float GetFogCoveragePercent()
+    {
+        if (allTilePositions.Count == 0) return 0f;
+
+        int revealedCount = 0;
+        foreach (var kvp in revealedTiles)
+        {
+            if (kvp.Value) revealedCount++;
+        }
+
+        return (revealedCount / (float)allTilePositions.Count) * 100f;
     }
 }
