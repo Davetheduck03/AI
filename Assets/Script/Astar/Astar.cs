@@ -10,8 +10,6 @@ public class Astar : MonoBehaviour
 
     public List<PathNode> allNodes = new List<PathNode>();
 
-    public static event Action<List<PathNode>> OnPathFound;
-
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -21,12 +19,6 @@ public class Astar : MonoBehaviour
         }
         Instance = this;
     }
-
-        public void FindPath(PathNode start, PathNode goal)
-        {
-            StartCoroutine(FindPathRoutine(start, goal, path => OnPathFound?.Invoke(path)));
-        }
-
         // 2. CALLBACK VERSION (use this when you need the path NOW)
         public void FindPath(PathNode start, PathNode goal, System.Action<List<PathNode>> onComplete)
         {

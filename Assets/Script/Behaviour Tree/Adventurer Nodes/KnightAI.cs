@@ -26,19 +26,20 @@ public class KnightAI : BehaviorTreeRunner
         var lootSeq = new Sequence(bb);
         lootSeq.AddChild(new FindLootInRange(bb, 10f));
         lootSeq.AddChild(new IsTargetRevealed(bb));
-        lootSeq.AddChild(new MoveTowardsTarget(bb, 0f));
+        lootSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
+        lootSeq.AddChild(new LootTarget(bb));
         root.AddChild(lootSeq);
 
         // Priority 3: Explore fog clusters (health-aware)
         var clusterSeq = new Sequence(bb);
         clusterSeq.AddChild(new FindFogCluster(bb, 100f));
-        clusterSeq.AddChild(new MoveTowardsTarget(bb, 2f));
+        clusterSeq.AddChild(new MoveTowardsTarget(bb, 1f));
         root.AddChild(clusterSeq);
 
         // Priority 4: Fallback to basic exploration
         var basicExploreSeq = new Sequence(bb);
         basicExploreSeq.AddChild(new FindUnexploredArea(bb, 100f));
-        basicExploreSeq.AddChild(new MoveTowardsTarget(bb, 2f));
+        basicExploreSeq.AddChild(new MoveTowardsTarget(bb, 1f));
         root.AddChild(basicExploreSeq);
 
         return root;

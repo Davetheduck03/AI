@@ -33,7 +33,7 @@ public class FindPlayer : Node
         }
 
         // Check line of sight
-        if (!HasLineOfSight(self.position, player.transform.position))
+        if (!VisionUtilities.HasLineOfSight(self.position, player.transform.position, visionBlockingLayers))
         {
             return NodeState.Failure;
         }
@@ -42,13 +42,5 @@ public class FindPlayer : Node
         bb.Set("target", player.transform);
         Debug.Log($"Enemy spotted player at distance: {dist:F1}");
         return NodeState.Success;
-    }
-
-    private bool HasLineOfSight(Vector3 from, Vector3 to)
-    {
-        Vector2 direction = (to - from).normalized;
-        float distance = Vector2.Distance(from, to);
-        RaycastHit2D hit = Physics2D.Raycast(from, direction, distance, visionBlockingLayers);
-        return hit.collider == null;
     }
 }

@@ -108,7 +108,7 @@ public class FogOfWarManager : MonoBehaviour
                 Vector3 checkWorldPos = fogTilemap.GetCellCenterWorld(checkPos);
                 float distance = Vector2.Distance(worldPosition, checkWorldPos);
 
-                if (distance <= visionRadius && HasLineOfSight(worldPosition, checkWorldPos))
+                if (distance <= visionRadius && VisionUtilities.HasLineOfSight(worldPosition, checkWorldPos, visionBlockingLayers))
                 {
                     RemoveFogTile(checkPos);
                 }
@@ -149,20 +149,12 @@ public class FogOfWarManager : MonoBehaviour
                 }
 
                 // Check line of sight
-                if (HasLineOfSight(worldPosition, checkWorldPos))
+                if (VisionUtilities.HasLineOfSight(worldPosition, checkWorldPos, visionBlockingLayers))
                 {
                     RemoveFogTile(checkPos);
                 }
             }
         }
-    }
-
-    private bool HasLineOfSight(Vector3 from, Vector3 to)
-    {
-        Vector2 direction = (to - from).normalized;
-        float distance = Vector2.Distance(from, to);
-        RaycastHit2D hit = Physics2D.Raycast(from, direction, distance, visionBlockingLayers);
-        return hit.collider == null;
     }
 
     public bool IsRevealed(Vector3 worldPosition)

@@ -32,7 +32,7 @@ public class UnitPathFollower : MonoBehaviour
     {
         if (movementComp == null) return;
 
-        PathNode currentNode = NodeGetter.Instance.GetClosestNode(transform.position);
+        PathNode currentNode = GridGenerator.Instance.GetNodeAtWorldPosition(transform.position);
         if (currentNode == null || newGoal == null) return;
 
         // Use CALLBACK version

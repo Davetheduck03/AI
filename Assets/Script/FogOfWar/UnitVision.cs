@@ -9,6 +9,7 @@ public class UnitVision : MonoBehaviour
     [Header("Vision Settings")]
     [SerializeField] private float visionRange = 5f;
     [SerializeField] private float updateInterval = 0.2f;
+    [SerializeField] private LayerMask obstacleMask;  // Layers that block vision (e.g., walls)
 
     [Header("Field of View")]
     [SerializeField] private bool useFOV = true;
@@ -111,7 +112,7 @@ public class UnitVision : MonoBehaviour
                 if (!IsInFOV(offset, direction, angle)) continue;
 
                 // Check line of sight (walls block vision)
-                if (!HasLineOfSight(center, checkPos)) continue;
+                if (!VisionUtilities.HasLineOfSight(center, checkPos, obstacleMask)) continue;
 
                 // Reveal this tile via FogOfWarManager
                 fogManager.RevealFogAroundPosition(checkPos);
@@ -130,20 +131,6 @@ public class UnitVision : MonoBehaviour
         return angleToPoint <= angle / 2f;
     }
 
-    /// <summary>
-    /// Check line of sight (walls block vision).
-    /// </summary>
-    private bool HasLineOfSight(Vector3 from, Vector3 to)
-    {
-        Vector2 direction = (to - from).normalized;
-        float distance = Vector2.Distance(from, to);
-
-        // Use same layer mask as FogOfWarManager
-        LayerMask wallLayer = LayerMask.GetMask("Walls");
-        RaycastHit2D hit = Physics2D.Raycast(from, direction, distance, wallLayer);
-
-        return hit.collider == null;
-    }
 
     /// <summary>
     /// Manually set facing direction (if not using movement direction).

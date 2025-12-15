@@ -76,6 +76,44 @@ public class GridGenerator : MonoBehaviour
         }
     }
 
+    public PathNode GetNearestWalkableNode(Vector3 worldPos, int maxSearchRadius = 20)
+    {
+        Vector3Int startCell = walkableTilemap.WorldToCell(worldPos);
+
+        // First check if the position itself is valid
+        PathNode directNode = GetNodeAt(startCell.x, startCell.y);
+        if (directNode != null && directNode.isWalkable)
+            return directNode;
+
+        // Spiral outward to find nearest walkable node
+        for (int radius = 1; radius <= maxSearchRadius; radius++)
+        {
+            // Check all positions in current radius ring
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                for (int dy = -radius; dy <= radius; dy++)
+                {
+                    // Only check the outer ring (not interior)
+                    if (Mathf.Abs(dx) != radius && Mathf.Abs(dy) != radius)
+                        continue;
+
+                    int checkX = startCell.x + dx;
+                    int checkY = startCell.y + dy;
+
+                    PathNode node = GetNodeAt(checkX, checkY);
+                    if (node != null && node.isWalkable)
+                    {
+                        Debug.Log($"Found nearest walkable node at radius {radius}: {node.name}");
+                        return node;
+                    }
+                }
+            }
+        }
+
+        Debug.LogWarning($"No walkable node found within {maxSearchRadius} tiles of {worldPos}");
+        return null;
+    }
+
     private IEnumerator WaitTillEndOfFrame()
     {
         yield return new WaitForEndOfFrame();

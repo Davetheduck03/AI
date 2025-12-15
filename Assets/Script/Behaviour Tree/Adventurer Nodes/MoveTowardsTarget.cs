@@ -7,7 +7,6 @@ using UnityEngine;
 /// </summary>
 public class MoveTowardsTarget : Node
 {
-    private float speed = 3f;
     private float approachRange = 1f;
     private Transform lastTarget = null;  // Track if target changed
 
