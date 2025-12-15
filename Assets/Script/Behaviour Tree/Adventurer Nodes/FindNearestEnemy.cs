@@ -2,7 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// ACTION: Finds the nearest enemy (tagged "Enemy") and sets it in Blackboard.
-/// Scans all enemies - call sparingly (e.g., every few seconds via decorator).
+/// Now notifies KnightAI when enemy is found (for combat priority).
 /// Returns Success if found, Failure if none.
 /// </summary>
 public class FindNearestEnemy : Node
@@ -36,8 +36,18 @@ public class FindNearestEnemy : Node
         if (nearest != null)
         {
             bb.Set("target", nearest);
+
+            // Notify KnightAI that we found an enemy (triggers combat mode)
+            KnightAI knight = self.GetComponent<KnightAI>();
+            if (knight != null)
+            {
+                knight.NotifyEnemyFound();
+            }
+
+            Debug.Log($"[FindNearestEnemy] Found {nearest.name} at distance {closestDist:F1}");
             return NodeState.Success;
         }
+
         return NodeState.Failure;
     }
 }

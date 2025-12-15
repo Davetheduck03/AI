@@ -6045,7 +6045,7 @@ Transform:
   m_GameObject: {fileID: 1444508578}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 30.4, y: -12.45, z: 0}
+  m_LocalPosition: {x: 31.47, y: -12.45, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 1
   m_Children: []
@@ -6224,6 +6224,7 @@ MonoBehaviour:
   enemyLayer:
     serializedVersion: 2
     m_Bits: 64
+  combatMemoryDuration: 2
 --- !u!114 &1444508588
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6241,9 +6242,9 @@ MonoBehaviour:
   visionBlockingLayers:
     serializedVersion: 2
     m_Bits: 128
-  useFOV: 0
-  fovAngle: 90
-  faceMovementDirection: 0
+  useFOV: 1
+  fovAngle: 120
+  faceMovementDirection: 1
   showDebugGizmos: 1
   visionColor: {r: 1, g: 1, b: 0, a: 0.2}
 --- !u!114 &1444508589
