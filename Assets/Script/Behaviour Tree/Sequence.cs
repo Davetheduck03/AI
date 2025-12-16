@@ -2,7 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Composite: Sequence - Succeeds if ALL children succeed (in order).
-/// Remembers progress across ticks.
+/// Resets when sequence fails or completes.
 /// </summary>
 public class Sequence : Node
 {
@@ -12,7 +12,7 @@ public class Sequence : Node
 
     public override NodeState Evaluate()
     {
-        for (; currentIndex < children.Count; ++currentIndex)
+        while (currentIndex < children.Count)
         {
             NodeState childState = children[currentIndex].Evaluate();
 
@@ -26,9 +26,18 @@ public class Sequence : Node
             {
                 return NodeState.Running;
             }
+
+            // Success - move to next child
+            currentIndex++;
         }
 
+        // All children succeeded
         currentIndex = 0;
         return NodeState.Success;
+    }
+
+    public void Reset()
+    {
+        currentIndex = 0;
     }
 }

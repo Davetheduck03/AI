@@ -18,7 +18,7 @@ MonoBehaviour:
   Health: 100
   Speed: 5
   goldReward: 0
-  damage: 1
+  damage: 25
   armor: 0
   fireRate: 0
   range: 0

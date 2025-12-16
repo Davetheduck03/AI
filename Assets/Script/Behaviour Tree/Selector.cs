@@ -2,35 +2,36 @@
 
 /// <summary>
 /// Composite: Selector (Fallback) - Succeeds on first Success child.
-/// Higher priority = leftmost. Fails only if all fail.
+/// REACTIVE: Always starts from first child to ensure priority is respected.
 /// </summary>
-
 public class Selector : Node
 {
-    private int currentIndex = 0;
+    private int runningIndex = -1;
 
     public Selector(Blackboard bb) : base(bb) { }
 
     public override NodeState Evaluate()
     {
-        for (; currentIndex < children.Count; ++currentIndex)
+        // Always start from beginning to check highest priority first
+        // But remember if we had a Running child
+        for (int i = 0; i < children.Count; i++)
         {
-            NodeState childState = children[currentIndex].Evaluate();
+            NodeState childState = children[i].Evaluate();
 
             if (childState == NodeState.Success)
             {
-                currentIndex = 0;
+                runningIndex = -1;
                 return NodeState.Success;
             }
 
             if (childState == NodeState.Running)
             {
+                runningIndex = i;
                 return NodeState.Running;
             }
         }
 
-        // All failed
-        currentIndex = 0;
+        runningIndex = -1;
         return NodeState.Failure;
     }
 }

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 /// <summary>
 /// FogOfWarManager - Handles fog placement and revealing.
-/// Walls BLOCK vision (can't see through) but REVEAL when close (walk near).
+/// Walls BLOCK vision but REVEAL when adjacent to revealed walkable tiles.
 /// </summary>
 public class FogOfWarManager : MonoBehaviour
 {
@@ -18,19 +18,17 @@ public class FogOfWarManager : MonoBehaviour
     [SerializeField] private Color fogColor = new Color(0, 0, 0, 0.8f);
 
     [Header("Wall Reveal Settings")]
-    [SerializeField] private float wallRevealDistance = 1.5f;  // How close to reveal walls
+    [SerializeField] private float wallRevealDistance = 1.5f;
 
     [Header("Exploration Settings")]
     [SerializeField] private float explorationSpacing = 8f;
     [SerializeField] private int maxFailedSearches = 3;
 
-    // Tile tracking
     private Dictionary<Vector3Int, bool> revealedTiles = new Dictionary<Vector3Int, bool>();
     private HashSet<Vector3Int> allTilePositions = new HashSet<Vector3Int>();
     private HashSet<Vector3Int> walkableTilePositions = new HashSet<Vector3Int>();
     private HashSet<Vector3Int> wallTilePositions = new HashSet<Vector3Int>();
 
-    // Exploration tracking
     private List<Vector3> recentTargets = new List<Vector3>();
     private const int maxRecentTargets = 5;
     private int consecutiveFailedSearches = 0;
@@ -54,7 +52,6 @@ public class FogOfWarManager : MonoBehaviour
         walkableTilePositions.Clear();
         wallTilePositions.Clear();
 
-        // Add fog to walkable tiles
         BoundsInt walkableBounds = walkableTilemap.cellBounds;
         foreach (Vector3Int pos in walkableBounds.allPositionsWithin)
         {
@@ -66,7 +63,6 @@ public class FogOfWarManager : MonoBehaviour
             }
         }
 
-        // Add fog to wall tiles
         BoundsInt wallsBounds = wallsTilemap.cellBounds;
         foreach (Vector3Int pos in wallsBounds.allPositionsWithin)
         {
@@ -95,10 +91,6 @@ public class FogOfWarManager : MonoBehaviour
         fogTilemap.SetTile(cellPos, null);
     }
 
-    /// <summary>
-    /// Reveal fog around a position.
-    /// Walls BLOCK line of sight but REVEAL if within wallRevealDistance.
-    /// </summary>
     public void RevealFogAroundPosition(Vector3 worldPosition, float radius, LayerMask visionBlockingLayers)
     {
         Vector3Int centerCell = fogTilemap.WorldToCell(worldPosition);
@@ -110,44 +102,33 @@ public class FogOfWarManager : MonoBehaviour
             {
                 Vector3Int checkPos = centerCell + new Vector3Int(x, y, 0);
 
-                // Must be a valid tile
                 if (!allTilePositions.Contains(checkPos)) continue;
-
-                // Skip if already revealed
                 if (revealedTiles.TryGetValue(checkPos, out bool isRevealed) && isRevealed) continue;
 
                 Vector3 checkWorldPos = fogTilemap.GetCellCenterWorld(checkPos);
                 float distance = Vector2.Distance(worldPosition, checkWorldPos);
 
-                // Check if in range
                 if (distance > radius) continue;
 
                 bool isWall = wallTilePositions.Contains(checkPos);
 
-                if (isWall)
+                if (!isWall)
                 {
-                    // WALLS: Reveal only if very close (ignore line of sight for walls themselves)
-                    if (distance <= wallRevealDistance)
-                    {
-                        RemoveFogTile(checkPos);
-                    }
-                }
-                else
-                {
-                    // WALKABLE TILES: Check line of sight (walls block this)
                     if (VisionUtilities.HasLineOfSight(worldPosition, checkWorldPos, visionBlockingLayers))
                     {
                         RemoveFogTile(checkPos);
                     }
                 }
+                else if (distance <= wallRevealDistance)
+                {
+                    RemoveFogTile(checkPos);
+                }
             }
         }
+
+        RevealAdjacentWalls();
     }
 
-    /// <summary>
-    /// Reveal fog in a cone/sector (Field of View).
-    /// Walls block vision but reveal when close.
-    /// </summary>
     public void RevealFogInCone(Vector3 worldPosition, Vector2 facingDirection, float range,
                                 float fovAngle, LayerMask visionBlockingLayers)
     {
@@ -161,7 +142,6 @@ public class FogOfWarManager : MonoBehaviour
             {
                 Vector3Int checkPos = centerCell + new Vector3Int(x, y, 0);
 
-                // Must be valid tile
                 if (!allTilePositions.Contains(checkPos)) continue;
                 if (revealedTiles.TryGetValue(checkPos, out bool isRevealed) && isRevealed) continue;
 
@@ -169,11 +149,9 @@ public class FogOfWarManager : MonoBehaviour
                 Vector2 offset = checkWorldPos - worldPosition;
                 float distance = offset.magnitude;
 
-                // Check range
                 if (distance > range) continue;
 
-                // Check if within FOV angle
-                if (distance > 0.1f)  // Skip angle check for center tile
+                if (distance > 0.1f)
                 {
                     float angleToPoint = Vector2.Angle(facingDirection, offset);
                     if (angleToPoint > halfAngle) continue;
@@ -181,38 +159,76 @@ public class FogOfWarManager : MonoBehaviour
 
                 bool isWall = wallTilePositions.Contains(checkPos);
 
-                if (isWall)
+                if (!isWall)
                 {
-                    // WALLS: Reveal only if very close
-                    if (distance <= wallRevealDistance)
-                    {
-                        RemoveFogTile(checkPos);
-                    }
-                }
-                else
-                {
-                    // WALKABLE TILES: Check line of sight
                     if (VisionUtilities.HasLineOfSight(worldPosition, checkWorldPos, visionBlockingLayers))
                     {
                         RemoveFogTile(checkPos);
                     }
                 }
+                else if (distance <= wallRevealDistance)
+                {
+                    RemoveFogTile(checkPos);
+                }
             }
+        }
+
+        RevealAdjacentWalls();
+    }
+
+    private void RevealAdjacentWalls()
+    {
+        List<Vector3Int> wallsToReveal = new List<Vector3Int>();
+
+        foreach (Vector3Int wallPos in wallTilePositions)
+        {
+            if (revealedTiles.TryGetValue(wallPos, out bool isRevealed) && isRevealed)
+                continue;
+
+            if (HasAdjacentRevealedWalkable(wallPos))
+            {
+                wallsToReveal.Add(wallPos);
+            }
+        }
+
+        foreach (Vector3Int wallPos in wallsToReveal)
+        {
+            RemoveFogTile(wallPos);
         }
     }
 
-    /// <summary>
-    /// Check if a position is revealed (no fog).
-    /// </summary>
+    private bool HasAdjacentRevealedWalkable(Vector3Int pos)
+    {
+        Vector3Int[] neighbors = new Vector3Int[]
+        {
+            pos + Vector3Int.up,
+            pos + Vector3Int.down,
+            pos + Vector3Int.left,
+            pos + Vector3Int.right,
+            pos + new Vector3Int(1, 1, 0),
+            pos + new Vector3Int(1, -1, 0),
+            pos + new Vector3Int(-1, 1, 0),
+            pos + new Vector3Int(-1, -1, 0)
+        };
+
+        foreach (Vector3Int neighbor in neighbors)
+        {
+            if (!walkableTilePositions.Contains(neighbor))
+                continue;
+
+            if (revealedTiles.TryGetValue(neighbor, out bool revealed) && revealed)
+                return true;
+        }
+
+        return false;
+    }
+
     public bool IsRevealed(Vector3 worldPosition)
     {
         Vector3Int cellPos = fogTilemap.WorldToCell(worldPosition);
         return revealedTiles.TryGetValue(cellPos, out bool revealed) && revealed;
     }
 
-    /// <summary>
-    /// Get nearest unrevealed WALKABLE position for exploration.
-    /// </summary>
     public Vector3? GetNearestUnrevealedPosition(Vector3 fromPosition)
     {
         Vector3? nearest = GetNearestUnrevealedWithSpacing(fromPosition, true);
@@ -243,10 +259,7 @@ public class FogOfWarManager : MonoBehaviour
 
         foreach (var kvp in revealedTiles)
         {
-            // Skip revealed tiles
             if (kvp.Value) continue;
-
-            // Only return WALKABLE unrevealed tiles
             if (!walkableTilePositions.Contains(kvp.Key)) continue;
 
             Vector3 worldPos = fogTilemap.GetCellCenterWorld(kvp.Key);
@@ -293,9 +306,6 @@ public class FogOfWarManager : MonoBehaviour
         consecutiveFailedSearches = 0;
     }
 
-    /// <summary>
-    /// Get count of unrevealed WALKABLE tiles.
-    /// </summary>
     public int GetUnrevealedCount()
     {
         int count = 0;
@@ -309,9 +319,6 @@ public class FogOfWarManager : MonoBehaviour
         return count;
     }
 
-    /// <summary>
-    /// Get list of unrevealed WALKABLE positions.
-    /// </summary>
     public List<Vector3> GetUnrevealedPositions()
     {
         List<Vector3> unrevealed = new List<Vector3>();
@@ -328,18 +335,12 @@ public class FogOfWarManager : MonoBehaviour
         return unrevealed;
     }
 
-    /// <summary>
-    /// Check if a world position is on a walkable tile.
-    /// </summary>
     public bool IsWalkable(Vector3 worldPosition)
     {
         Vector3Int cellPos = fogTilemap.WorldToCell(worldPosition);
         return walkableTilePositions.Contains(cellPos);
     }
 
-    /// <summary>
-    /// Get total fog coverage percentage.
-    /// </summary>
     public float GetFogCoveragePercent()
     {
         if (allTilePositions.Count == 0) return 0f;

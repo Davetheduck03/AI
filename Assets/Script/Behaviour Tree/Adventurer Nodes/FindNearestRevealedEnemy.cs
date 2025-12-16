@@ -1,17 +1,18 @@
 using UnityEngine;
 
 /// <summary>
-/// ACTION: Finds the nearest enemy (tagged "Enemy") and sets it in Blackboard.
-/// Now notifies KnightAI when enemy is found (for combat priority).
-/// Returns Success if found, Failure if none.
+/// ACTION: Finds the nearest REVEALED enemy (not in fog).
+/// Always re-checks for enemies (doesn't cache).
 /// </summary>
-public class FindNearestEnemy : Node
+public class FindNearestRevealedEnemy : Node
 {
-    private float maxDetectionRange = 20f;
+    private float maxDetectionRange;
+    private FogOfWarManager fogManager;
 
-    public FindNearestEnemy(Blackboard bb, float range = 20f) : base(bb)
+    public FindNearestRevealedEnemy(Blackboard bb, float range = 20f) : base(bb)
     {
         maxDetectionRange = range;
+        fogManager = Object.FindAnyObjectByType<FogOfWarManager>();
     }
 
     public override NodeState Evaluate()
@@ -25,6 +26,14 @@ public class FindNearestEnemy : Node
 
         foreach (GameObject enemyObj in enemies)
         {
+            if (enemyObj == null) continue;
+
+            // Skip enemies still in fog
+            if (fogManager != null && !fogManager.IsRevealed(enemyObj.transform.position))
+            {
+                continue;
+            }
+
             float dist = Vector3.Distance(self.position, enemyObj.transform.position);
             if (dist < closestDist)
             {
@@ -36,15 +45,7 @@ public class FindNearestEnemy : Node
         if (nearest != null)
         {
             bb.Set("target", nearest);
-
-            // Notify KnightAI that we found an enemy (triggers combat mode)
-            KnightAI knight = self.GetComponent<KnightAI>();
-            if (knight != null)
-            {
-                knight.NotifyEnemyFound();
-            }
-
-            Debug.Log($"[FindNearestEnemy] Found {nearest.name} at distance {closestDist:F1}");
+            Debug.Log($"[FindNearestRevealedEnemy] Targeting {nearest.name} at distance {closestDist:F1}");
             return NodeState.Success;
         }
 
