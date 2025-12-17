@@ -18,7 +18,7 @@ public class FogOfWarManager : MonoBehaviour
     [SerializeField] private Color fogColor = new Color(0, 0, 0, 0.8f);
 
     [Header("Wall Reveal Settings")]
-    [SerializeField] private float wallRevealDistance = 1.5f;
+    [SerializeField] private float wallRevealDistance = 2.5f;
 
     [Header("Exploration Settings")]
     [SerializeField] private float explorationSpacing = 8f;
