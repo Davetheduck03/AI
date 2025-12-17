@@ -8,6 +8,7 @@ public class FindFogCluster : Node
 {
     private float maxSearchRange;
     private FogClusterExplorer clusterExplorer;
+    private const string TARGET_NAME = "ClusterTarget";
 
     public FindFogCluster(Blackboard bb, float range = 100f) : base(bb)
     {
@@ -33,15 +34,11 @@ public class FindFogCluster : Node
             return NodeState.Failure;
         }
 
-        // Clean up old target
-        Transform oldTarget = bb.Get<Transform>("target");
-        if (oldTarget != null && oldTarget.gameObject.name == "ClusterTarget")
-        {
-            Object.Destroy(oldTarget.gameObject);
-        }
+        // Clean up any previous exploration target
+        CleanupOldTarget();
 
         // Get current health
-        float healthPercent = 1f;  // Default to full health
+        float healthPercent = 1f;
         HealthComponent healthComp = self.GetComponent<HealthComponent>();
         if (healthComp != null)
         {
@@ -58,7 +55,7 @@ public class FindFogCluster : Node
             if (distance <= maxSearchRange)
             {
                 // Create target
-                GameObject targetObj = new GameObject("ClusterTarget");
+                GameObject targetObj = new GameObject(TARGET_NAME);
                 targetObj.transform.position = clusterTarget.Value;
 
                 bb.Set("target", targetObj.transform);
@@ -70,5 +67,14 @@ public class FindFogCluster : Node
 
         Debug.Log("FindFogCluster: No suitable clusters found");
         return NodeState.Failure;
+    }
+
+    private void CleanupOldTarget()
+    {
+        Transform oldTarget = bb.Get<Transform>("target");
+        if (oldTarget != null && oldTarget.gameObject.name == TARGET_NAME)
+        {
+            Object.Destroy(oldTarget.gameObject);
+        }
     }
 }

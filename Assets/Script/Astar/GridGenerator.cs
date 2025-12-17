@@ -6,7 +6,7 @@ using UnityEngine.Tilemaps;
 public class GridGenerator : MonoBehaviour
 {
     public static event Action OnGridGenerated;
-    public static GridGenerator Instance;
+    public static GridGenerator Instance { get; private set; }
 
     [Header("Tilemap Settings")]
     public Tilemap walkableTilemap;
@@ -16,11 +16,20 @@ public class GridGenerator : MonoBehaviour
     public float cellSize = 1f;
 
     private PathNode[,] grid;
-    private Vector2Int gridOffset; // To handle negative tilemap positions
+    private Vector2Int gridOffset;
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+    }
 
     private void Start()
     {
-        GridGenerator.Instance = this;
         GenerateGrid();
         LinkNeighbors();
         StartCoroutine(WaitTillEndOfFrame());
@@ -34,18 +43,13 @@ public class GridGenerator : MonoBehaviour
             return;
         }
 
-        // Get the bounds of the tilemap
         BoundsInt bounds = walkableTilemap.cellBounds;
-
-        // Store offset to handle negative positions
         gridOffset = new Vector2Int(bounds.xMin, bounds.yMin);
 
-        // Initialize grid based on tilemap bounds
         int width = bounds.size.x;
         int height = bounds.size.y;
         grid = new PathNode[width, height];
 
-        // Iterate through all positions in the tilemap bounds
         for (int x = bounds.xMin; x < bounds.xMax; x++)
         {
             for (int y = bounds.yMin; y < bounds.yMax; y++)
@@ -53,22 +57,18 @@ public class GridGenerator : MonoBehaviour
                 Vector3Int cellPos = new Vector3Int(x, y, 0);
                 TileBase tile = walkableTilemap.GetTile(cellPos);
 
-                // Only create nodes where tiles exist
                 if (tile == null)
                     continue;
 
-                // Convert tilemap position to grid array indices
                 int gridX = x - bounds.xMin;
                 int gridY = y - bounds.yMin;
 
-                // Get world position from tilemap
                 Vector3 worldPos = walkableTilemap.GetCellCenterWorld(cellPos);
 
-                // Spawn new node
                 GameObject nodeObj = Instantiate(nodePrefab, worldPos, Quaternion.identity, transform);
                 nodeObj.name = $"Node ({x},{y})";
                 PathNode node = nodeObj.GetComponent<PathNode>();
-                node.gridPosition = new Vector2Int(x, y); // Store actual tilemap coordinates
+                node.gridPosition = new Vector2Int(x, y);
                 node.isWalkable = true;
                 grid[gridX, gridY] = node;
                 Astar.Instance.allNodes.Add(node);
@@ -76,24 +76,23 @@ public class GridGenerator : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Gets nearest walkable node using efficient spiral search from grid position.
+    /// </summary>
     public PathNode GetNearestWalkableNode(Vector3 worldPos, int maxSearchRadius = 20)
     {
         Vector3Int startCell = walkableTilemap.WorldToCell(worldPos);
 
-        // First check if the position itself is valid
         PathNode directNode = GetNodeAt(startCell.x, startCell.y);
         if (directNode != null && directNode.isWalkable)
             return directNode;
 
-        // Spiral outward to find nearest walkable node
         for (int radius = 1; radius <= maxSearchRadius; radius++)
         {
-            // Check all positions in current radius ring
             for (int dx = -radius; dx <= radius; dx++)
             {
                 for (int dy = -radius; dy <= radius; dy++)
                 {
-                    // Only check the outer ring (not interior)
                     if (Mathf.Abs(dx) != radius && Mathf.Abs(dy) != radius)
                         continue;
 
@@ -139,7 +138,6 @@ public class GridGenerator : MonoBehaviour
 
                 node.neighbors.Clear();
 
-                // Check all 4 directions
                 if (x > 0 && grid[x - 1, y] != null)
                     node.neighbors.Add(grid[x - 1, y]);
 
@@ -157,7 +155,6 @@ public class GridGenerator : MonoBehaviour
 
     public PathNode GetNodeAt(int tilemapX, int tilemapY)
     {
-        // Convert tilemap coordinates to grid array indices
         int gridX = tilemapX - gridOffset.x;
         int gridY = tilemapY - gridOffset.y;
 

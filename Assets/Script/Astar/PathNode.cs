@@ -6,7 +6,6 @@ public class PathNode : MonoBehaviour
     public static event System.Action<PathNode> OnNodeUpdated;
 
     public Vector2Int gridPosition;
-    public bool isPlaceable = true;
     public List<PathNode> neighbors = new List<PathNode>();
 
     [HideInInspector] public float gCost;
@@ -26,6 +25,5 @@ public class PathNode : MonoBehaviour
                 OnNodeUpdated?.Invoke(this);
             }
         }
-
     }
 }

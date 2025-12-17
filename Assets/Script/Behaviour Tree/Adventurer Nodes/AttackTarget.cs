@@ -1,15 +1,14 @@
 ﻿using UnityEngine;
 
 /// <summary>
-/// ACTION: Attacks target (2D raycast damage for 2D games).
-/// Assumes enemy has Collider2D + HealthComponent.
-/// Returns Success after one attack, or use Repeat decorator for burst.
+/// ACTION: Attacks target using 2D raycast.
+/// Damage is pulled from DamageComponent on the attacker.
+/// Returns Success after one attack.
 /// </summary>
 public class AttackTarget : Node
 {
-    private float damage = 25f;  // Unused here - pulled from DamageComponent
-    private float attackRange = 2f;
-    private float attackCooldown = 1f;
+    private float attackRange;
+    private float attackCooldown;
     private float lastAttackTime = 0f;
     private LayerMask targetLayer;
 
@@ -24,6 +23,7 @@ public class AttackTarget : Node
     {
         Transform self = bb.Get<Transform>("self");
         Transform target = bb.Get<Transform>("target");
+
         if (self == null || target == null)
         {
             Debug.Log("Self or Target Not Found");
@@ -47,9 +47,10 @@ public class AttackTarget : Node
         Vector2 direction = (targetPos2D - selfPos2D).normalized;
         RaycastHit2D[] hits = Physics2D.RaycastAll(selfPos2D, direction, attackRange, targetLayer);
 
-        if (hits[0].collider != null && hits[0].transform == target)
+        if (hits.Length > 0 && hits[0].collider != null && hits[0].transform == target)
         {
             Debug.DrawRay(selfPos2D, direction * dist, Color.green, 0.5f);
+
             if (self.gameObject.TryGetComponent<DamageComponent>(out var damageComponent))
             {
                 damageComponent.TryDealDamage(hits[0].transform.gameObject);
@@ -59,14 +60,13 @@ public class AttackTarget : Node
             }
             else
             {
-                Debug.LogWarning("DamageComponent missing on hero!");
+                Debug.LogWarning("DamageComponent missing on attacker!");
             }
         }
         else
         {
-            // Missed: Debug red ray
             Debug.DrawRay(selfPos2D, direction * attackRange, Color.red, 0.5f);
-            Debug.Log($"Raycast missed target (hit: {hits[0].collider?.name ?? "nothing"})");
+            Debug.Log($"Raycast missed target (hit: {(hits.Length > 0 ? hits[0].collider?.name : "nothing")})");
         }
 
         return NodeState.Failure;

@@ -6,7 +6,6 @@ public class UnitPathFollower : MonoBehaviour
 {
     private List<PathNode> path;
     private int currentIndex = 0;
-    private Coroutine followRoutine;
     private MovementComponent movementComp;
 
     public void SetPath(List<PathNode> newPath, float moveSpeed, MovementComponent mc = null)
@@ -18,14 +17,13 @@ public class UnitPathFollower : MonoBehaviour
 
         if (path != null && path.Count > 0)
         {
-            followRoutine = StartCoroutine(FollowPath(moveSpeed));
+            StartCoroutine(FollowPath(moveSpeed));
             Debug.Log("Path Started");
         }
         else
         {
             Debug.Log("No Path");
         }
-        
     }
 
     public void RecalculatePath(PathNode newGoal)
@@ -35,7 +33,6 @@ public class UnitPathFollower : MonoBehaviour
         PathNode currentNode = GridGenerator.Instance.GetNodeAtWorldPosition(transform.position);
         if (currentNode == null || newGoal == null) return;
 
-        // Use CALLBACK version
         Astar.Instance.FindPath(currentNode, newGoal, (newPath) =>
         {
             SetPath(newPath, movementComp.movement_Speed, movementComp);
@@ -45,7 +42,7 @@ public class UnitPathFollower : MonoBehaviour
     private IEnumerator FollowPath(float moveSpeed)
     {
         PathNode.OnNodeUpdated += HandleNodeBlocked;
-        Debug.Log(moveSpeed);
+
         while (currentIndex < path.Count)
         {
             PathNode targetNode = path[currentIndex];
