@@ -9,6 +9,9 @@ public class EquipmentComponent : UnitComponent
     private HealthComponent healthComp;
     private DamageComponent damageComp;
 
+    // Cached class reference for weapon restriction checks
+    private AdventurerClassSO adventurerClass;
+
     private float appliedWeaponDamage = 0f;
     private float appliedHeadArmor = 0f;
     private float appliedBodyArmor = 0f;
@@ -17,15 +20,26 @@ public class EquipmentComponent : UnitComponent
     {
         healthComp = GetComponent<HealthComponent>();
         damageComp = GetComponent<DamageComponent>();
+
+        // Pull class reference from HeroSO if available
+        if (data is HeroSO heroData)
+        {
+            adventurerClass = heroData.adventurerClass;
+
+            if (adventurerClass == null)
+                Debug.LogWarning($"[EquipmentComponent] {gameObject.name} has no AdventurerClass assigned in HeroSO!");
+            else
+                Debug.Log($"[EquipmentComponent] {gameObject.name} initialized as {adventurerClass.className}");
+        }
     }
 
     public bool TryEquip(ItemSO newItem)
     {
         if (newItem is WeaponSO weapon) return TryEquipWeapon(weapon);
-        if (newItem is HeadArmorSO headArmor) return TryEquipHead(headArmor);
-        if (newItem is BodyArmorSO bodyArmor) return TryEquipBody(bodyArmor);
+        if (newItem is HeadArmorSO head) return TryEquipHead(head);
+        if (newItem is BodyArmorSO body) return TryEquipBody(body);
 
-        Debug.LogWarning($"[EquipmentComponent] Unknown type: {newItem.GetType()}");
+        Debug.LogWarning($"[EquipmentComponent] Unknown item type: {newItem.GetType()}");
         return false;
     }
 
@@ -35,6 +49,16 @@ public class EquipmentComponent : UnitComponent
 
     private bool TryEquipWeapon(WeaponSO newWeapon)
     {
+        // Class restriction check
+        if (adventurerClass != null && !adventurerClass.CanEquipWeapon(newWeapon))
+        {
+            Debug.Log($"[Equipment] {gameObject.name} ({adventurerClass.className}) " +
+                      $"cannot equip {newWeapon.itemName} " +
+                      $"(WeaponType: {newWeapon.weaponType} not allowed for this class)");
+            return false;
+        }
+
+        // Score check — keep better weapon
         if (equippedWeapon != null && newWeapon.GetScore() <= equippedWeapon.GetScore())
         {
             Debug.Log($"[Equipment] Kept {equippedWeapon.itemName} " +
@@ -43,14 +67,16 @@ public class EquipmentComponent : UnitComponent
             return false;
         }
 
+        // Remove old weapon bonus before applying new one
         if (equippedWeapon != null)
             damageComp?.AddDamageBonus(-appliedWeaponDamage);
 
         equippedWeapon = newWeapon;
-        appliedWeaponDamage = newWeapon.statValue;
+        appliedWeaponDamage = newWeapon.attackDamageValue;
         damageComp?.AddDamageBonus(appliedWeaponDamage);
 
-        Debug.Log($"[Equipment] {gameObject.name} equipped {newWeapon.itemName}");
+        Debug.Log($"[Equipment] {gameObject.name} equipped {newWeapon.itemName} " +
+                  $"(+{appliedWeaponDamage} dmg)");
         return true;
     }
 
@@ -105,6 +131,7 @@ public class EquipmentComponent : UnitComponent
     public void LogLoadout()
     {
         Debug.Log($"[{gameObject.name} Loadout] " +
+                  $"Class: {(adventurerClass != null ? adventurerClass.className : "none")} | " +
                   $"Weapon: {(equippedWeapon != null ? equippedWeapon.itemName : "none")} | " +
                   $"Head: {(equippedHead != null ? equippedHead.itemName : "none")} | " +
                   $"Body: {(equippedBody != null ? equippedBody.itemName : "none")} | " +
