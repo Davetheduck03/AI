@@ -15,7 +15,7 @@ public class KnightAI : BehaviorTreeRunner
     [Header("Movement")]
     [Tooltip("How close to get before attempting to attack. " +
              "Should be <= HeroSO.range for melee, can equal range for ranged/AoE.")]
-    [SerializeField] private float approachDistance = 1f;
+    [SerializeField] private float approachDistance = 0.25f;
 
     protected override void Start()
     {

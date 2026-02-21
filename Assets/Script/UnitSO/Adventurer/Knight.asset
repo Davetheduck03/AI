@@ -18,11 +18,10 @@ MonoBehaviour:
   Health: 100
   Speed: 5
   goldReward: 0
-  baseDamage: 0
-  baseAttackSpeed: 0
+  baseDamage: 25
+  baseAttackSpeed: 0.8
   armor: 0
   adventurerClass: {fileID: 11400000, guid: 3adf7eba5c2ef2e46bd0f1ce7f0db79d, type: 2}
-  fireRate: 0.8
   range: 1
   isAoE: 0
   projectileSpeed: 0

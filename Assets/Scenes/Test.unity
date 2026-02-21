@@ -6481,6 +6481,10 @@ PrefabInstance:
       propertyPath: fogManager
       value: 
       objectReference: {fileID: 402860380}
+    - target: {fileID: 801897068721443273, guid: 2dbed49558b38aa41ba72b9b31e9be04, type: 3}
+      propertyPath: approachDistance
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 1802216085684903147, guid: 2dbed49558b38aa41ba72b9b31e9be04, type: 3}
       propertyPath: m_LocalPosition.x
       value: 31.44

@@ -8,7 +8,6 @@ public class HeroSO : UnitSO
     public AdventurerClassSO adventurerClass;
 
     [Header("Hero Stats")]
-    public float fireRate;
     public float range;
     public bool isAoE;
     public float projectileSpeed;
