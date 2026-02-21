@@ -1,15 +1,21 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class DamageComponent : UnitComponent
 {
-    private float damage;
+    private float baseDamage;
+    private float damageBonus = 0f;
 
+    public float TotalDamage => baseDamage + damageBonus;
 
     protected override void OnInitialize()
     {
-        damage = data.damage;
+        baseDamage = data.damage;
+    }
+
+    public void AddDamageBonus(float amount)
+    {
+        damageBonus += amount;
+        Debug.Log($"[DamageComponent] {gameObject.name} damage: {baseDamage} + {damageBonus} bonus");
     }
 
     public void TryDealDamage(GameObject target)
@@ -18,10 +24,9 @@ public class DamageComponent : UnitComponent
         {
             if (health.isDamagable)
             {
-                DamageData damageData = new DamageData(damage, this.gameObject);
+                DamageData damageData = new DamageData(TotalDamage, this.gameObject);
                 health.TakeDamage(damageData);
             }
-            else return;
         }
     }
 }

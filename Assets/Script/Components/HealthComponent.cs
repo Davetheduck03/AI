@@ -1,51 +1,55 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-
-
 
 public class HealthComponent : UnitComponent
 {
-    public float currentHealth;
-    public float currentArmour;
-    public bool isDamagable;
-    public float maxHealth;
+    public float currentHealth { get; private set; }
+    public float maxHealth { get; private set; }
+    public bool isDamagable { get; private set; }
 
+    // Flat armor from base stats + equipment
+    public float totalArmor => baseArmor + armorBonus;
+
+    // Derived from armor: armor / (armor + 100)
+    // e.g. 50 armor = 33% reduction, 100 armor = 50%, 200 armor = 67%
+    public float DamageReduction => totalArmor / (totalArmor + 100f);
+
+    private float baseArmor;
+    private float armorBonus = 0f;
 
     protected override void OnInitialize()
     {
+        baseArmor = data.armor;
         maxHealth = data.Health;
         currentHealth = maxHealth;
         isDamagable = true;
-        currentArmour = data.armor;
+    }
+
+    public void AddArmorBonus(float amount)
+    {
+        armorBonus += amount;
+        Debug.Log($"[HealthComponent] {gameObject.name} armor: {totalArmor} " +
+                  $"({DamageReduction:P0} reduction)");
+    }
+
+    public void AddMaxHealthBonus(float amount)
+    {
+        maxHealth += amount;
+        currentHealth = Mathf.Clamp(currentHealth + amount, 1f, maxHealth);
     }
 
     public void TakeDamage(DamageData data)
     {
         if (!isDamagable) return;
-        float baseAmount = data.amount;
 
-        if (currentArmour > 0)
-        {
-            currentArmour -= baseAmount * 0.5f;
-            if (currentArmour < 0)
-            {
-                float overflowDamage = -currentArmour * 2f;
-                currentHealth -= overflowDamage;
-                currentArmour = 0;
-            }
-        }
+        float finalDamage = data.amount * (1f - DamageReduction);
+        currentHealth -= finalDamage;
 
-        else if(currentArmour <= 0)
-        {
-            currentHealth -= baseAmount;
-        }
+        Debug.Log($"[HealthComponent] {gameObject.name} took {finalDamage:F1} damage " +
+                  $"({data.amount:F1} raw, {DamageReduction:P0} reduced). " +
+                  $"HP: {currentHealth:F1}/{maxHealth}");
 
         if (currentHealth <= 0)
-        {
             Die();
-        }
     }
 
     private void Die()
