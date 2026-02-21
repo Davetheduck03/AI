@@ -91,7 +91,7 @@ public class MoveTowardsTarget : Node
 
     private void Reset()
     {
-        lastTarget = null;
+        // lastTarget = null;  ← REMOVE
         actualDestination = null;
     }
 }

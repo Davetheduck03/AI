@@ -13,6 +13,7 @@ public class EquipmentComponent : UnitComponent
     private AdventurerClassSO adventurerClass;
 
     private float appliedWeaponDamage = 0f;
+    private float appliedWeaponAttackSpeed = 0f;
     private float appliedHeadArmor = 0f;
     private float appliedBodyArmor = 0f;
 
@@ -67,16 +68,23 @@ public class EquipmentComponent : UnitComponent
             return false;
         }
 
-        // Remove old weapon bonus before applying new one
+        // Strip old weapon bonuses before applying new ones
         if (equippedWeapon != null)
+        {
             damageComp?.AddDamageBonus(-appliedWeaponDamage);
+            damageComp?.AddAttackSpeedBonus(-appliedWeaponAttackSpeed);
+        }
 
         equippedWeapon = newWeapon;
-        appliedWeaponDamage = newWeapon.attackDamageValue;
+        appliedWeaponDamage = newWeapon.damageBonus;
+        appliedWeaponAttackSpeed = newWeapon.attackSpeedBonus;
+
         damageComp?.AddDamageBonus(appliedWeaponDamage);
+        damageComp?.AddAttackSpeedBonus(appliedWeaponAttackSpeed);
 
         Debug.Log($"[Equipment] {gameObject.name} equipped {newWeapon.itemName} " +
-                  $"(+{appliedWeaponDamage} dmg)");
+                  $"(+{appliedWeaponDamage} dmg, +{appliedWeaponAttackSpeed} atk spd) → " +
+                  $"Total: {damageComp?.TotalDamage} dmg, {damageComp?.TotalAttackSpeed}/s");
         return true;
     }
 

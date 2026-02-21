@@ -1,12 +1,7 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-
-
 
 public abstract class UnitSO : ScriptableObject
 {
-
     [Header("Basic Info")]
     public string UnitName;
     public GameObject UnitPrefab;
@@ -16,9 +11,9 @@ public abstract class UnitSO : ScriptableObject
     public float Health;
     public float Speed;
     public float goldReward;
-    public float damage;
 
-
-    [Header("Optional Stats")]
+    [Header("Combat Stats")]
+    public float baseDamage;
+    public float baseAttackSpeed;   // Attacks per second, e.g. 1.0 = 1 attack/sec
     public float armor;
 }

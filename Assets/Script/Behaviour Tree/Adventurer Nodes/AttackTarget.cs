@@ -1,21 +1,18 @@
 ﻿using UnityEngine;
 
 /// <summary>
-/// ACTION: Attacks target using 2D raycast.
-/// Damage is pulled from DamageComponent on the attacker.
-/// Returns Success after one attack.
+/// ACTION: Attacks target using range, AoE, damage, and cooldown
+/// all sourced from DamageComponent (which reflects UnitSO base stats + weapon bonuses).
+/// Returns Success after one attack lands.
 /// </summary>
 public class AttackTarget : Node
 {
-    private float attackRange;
-    private float attackCooldown;
-    private float lastAttackTime = 0f;
     private LayerMask targetLayer;
+    private float lastAttackTime = 0f;
 
-    public AttackTarget(Blackboard bb, float range = 2f, float cooldown = 1f, LayerMask targetLayer = default) : base(bb)
+    // Range is no longer passed in — it's read live from DamageComponent
+    public AttackTarget(Blackboard bb, LayerMask targetLayer = default) : base(bb)
     {
-        this.attackRange = range;
-        this.attackCooldown = cooldown;
         this.targetLayer = targetLayer;
     }
 
@@ -25,50 +22,52 @@ public class AttackTarget : Node
         Transform target = bb.Get<Transform>("target");
 
         if (self == null || target == null)
+            return NodeState.Failure;
+
+        if (!self.TryGetComponent<DamageComponent>(out var damageComp))
         {
-            Debug.Log("Self or Target Not Found");
+            Debug.LogWarning("AttackTarget: DamageComponent missing!");
             return NodeState.Failure;
         }
 
         Vector2 selfPos2D = (Vector2)self.position;
         Vector2 targetPos2D = (Vector2)target.position;
         float dist = Vector2.Distance(selfPos2D, targetPos2D);
+        float range = damageComp.AttackRange;
 
-        if (dist > attackRange)
-        {
+        // Out of range
+        if (dist > range)
             return NodeState.Failure;
-        }
 
-        if (Time.time - lastAttackTime < attackCooldown)
-        {
+        // Still on cooldown
+        if (Time.time - lastAttackTime < damageComp.AttackCooldown)
             return NodeState.Running;
+
+        // ── AoE: no raycast needed, just deal damage around self ──
+        if (damageComp.IsAoE)
+        {
+            Debug.DrawRay(selfPos2D, Vector2.up * range, Color.magenta, 0.5f);
+            damageComp.TryDealDamage(target.gameObject, selfPos2D, targetLayer);
+            lastAttackTime = Time.time;
+            return NodeState.Success;
         }
 
+        // ── Single-target: raycast to confirm line of sight ──
         Vector2 direction = (targetPos2D - selfPos2D).normalized;
-        RaycastHit2D[] hits = Physics2D.RaycastAll(selfPos2D, direction, attackRange, targetLayer);
+        RaycastHit2D[] hits = Physics2D.RaycastAll(selfPos2D, direction, range, targetLayer);
 
-        if (hits.Length > 0 && hits[0].collider != null && hits[0].transform == target)
+        // Skip self, find target
+        foreach (var hit in hits)
         {
-            Debug.DrawRay(selfPos2D, direction * dist, Color.green, 0.5f);
-
-            if (self.gameObject.TryGetComponent<DamageComponent>(out var damageComponent))
+            if (hit.transform == self) continue;
+            if (hit.transform == target)
             {
-                damageComponent.TryDealDamage(hits[0].transform.gameObject);
+                damageComp.TryDealDamage(hit.transform.gameObject);
                 lastAttackTime = Time.time;
-                Debug.Log($"Enemy Hit! (dist: {dist:F1})");
                 return NodeState.Success;
             }
-            else
-            {
-                Debug.LogWarning("DamageComponent missing on attacker!");
-            }
+            break; // Something blocking LOS
         }
-        else
-        {
-            Debug.DrawRay(selfPos2D, direction * attackRange, Color.red, 0.5f);
-            Debug.Log($"Raycast missed target (hit: {(hits.Length > 0 ? hits[0].collider?.name : "nothing")})");
-        }
-
         return NodeState.Failure;
     }
 }

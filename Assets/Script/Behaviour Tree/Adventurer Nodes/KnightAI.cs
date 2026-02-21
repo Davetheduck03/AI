@@ -1,42 +1,39 @@
 using UnityEngine;
 
 /// <summary>
-/// Knight AI with reactive combat priority.
-/// Immediately interrupts any action when revealed enemy is detected.
-/// Priority: Attack > Loot > Explore
+/// Knight AI — Priority: Attack > Loot > Explore.
+/// attackRange is now owned by DamageComponent (from HeroSO.range).
+/// approachDistance controls how close to get before attacking.
 /// </summary>
 public class KnightAI : BehaviorTreeRunner
 {
     [SerializeField] private LayerMask enemyLayer;
 
-    [Header("Detection Settings")]
+    [Header("Detection")]
     [SerializeField] private float enemyDetectionRange = 10f;
-    [SerializeField] private float attackRange = 2f;
 
-    private FogOfWarManager fogManager;
+    [Header("Movement")]
+    [Tooltip("How close to get before attempting to attack. " +
+             "Should be <= HeroSO.range for melee, can equal range for ranged/AoE.")]
+    [SerializeField] private float approachDistance = 1f;
 
     protected override void Start()
     {
         base.Start();
-        fogManager = FindAnyObjectByType<FogOfWarManager>();
     }
 
     protected override Node BuildTree()
     {
         var root = new Selector(bb);
 
-        // ============================================
-        // Priority 1: ATTACK (Reactive - checks every frame)
-        // ============================================
+        // Priority 1: ATTACK
         var attackSeq = new Sequence(bb);
         attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange));
-        attackSeq.AddChild(new MoveTowardsTarget(bb, attackRange));
-        attackSeq.AddChild(new AttackTarget(bb, attackRange, 1f, enemyLayer));
+        attackSeq.AddChild(new MoveTowardsTarget(bb, approachDistance));
+        attackSeq.AddChild(new AttackTarget(bb, enemyLayer));   // range from DamageComponent
         root.AddChild(attackSeq);
 
-        // ============================================
         // Priority 2: LOOT
-        // ============================================
         var lootSeq = new Sequence(bb);
         lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
         lootSeq.AddChild(new FindLootInRange(bb, 10f));
@@ -45,9 +42,7 @@ public class KnightAI : BehaviorTreeRunner
         lootSeq.AddChild(new LootTarget(bb));
         root.AddChild(lootSeq);
 
-        // ============================================
         // Priority 3: EXPLORE
-        // ============================================
         var exploreSeq = new Sequence(bb);
         exploreSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
         exploreSeq.AddChild(new FindFogCluster(bb, 50f));
@@ -65,6 +60,6 @@ public class KnightAI : BehaviorTreeRunner
         Gizmos.DrawWireSphere(transform.position, enemyDetectionRange);
 
         Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, attackRange);
+        Gizmos.DrawWireSphere(transform.position, approachDistance);
     }
 }
