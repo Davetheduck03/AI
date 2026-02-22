@@ -1,13 +1,9 @@
+// KnightAI.cs
 using UnityEngine;
 
 /// <summary>
 /// Knight AI — Priority: Attack > Loot > Explore.
-/// attackRange is now owned by DamageComponent (from HeroSO.range).
-/// approachDistance controls how close to get before attacking.
 /// </summary>
-/// 
-
-
 public class KnightAI : BehaviorTreeRunner
 {
     [SerializeField] private LayerMask enemyLayer;
@@ -16,9 +12,8 @@ public class KnightAI : BehaviorTreeRunner
     [SerializeField] private float enemyDetectionRange = 10f;
 
     [Header("Movement")]
-    [Tooltip("How close to get before attempting to attack. " +
-             "Should be <= HeroSO.range for melee, can equal range for ranged/AoE.")]
-    [SerializeField] private float approachDistance = 0.25f;
+    [Tooltip("How close to get before attempting to attack.")]
+    [SerializeField] private float approachDistance = 1f;
 
     protected override void Start()
     {
@@ -32,8 +27,7 @@ public class KnightAI : BehaviorTreeRunner
         // Priority 1: ATTACK
         var attackSeq = new Sequence(bb);
         attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange));
-        attackSeq.AddChild(new MoveTowardsTarget(bb, approachDistance));
-        attackSeq.AddChild(new AttackTarget(bb, enemyLayer));   // range from DamageComponent
+        attackSeq.AddChild(new MoveAndAttack(bb, approachDistance, enemyLayer));
         root.AddChild(attackSeq);
 
         // Priority 2: LOOT

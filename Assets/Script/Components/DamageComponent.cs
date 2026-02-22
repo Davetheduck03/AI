@@ -32,10 +32,9 @@ public class DamageComponent : UnitComponent
             AttackRange = heroData.range;
             IsAoE = heroData.isAoE;
         }
-        else
+        else if (data is EnemySO enemyData)
         {
-            AttackRange = 2f;
-            IsAoE = false;
+            AttackRange = enemyData.range;
         }
 
         Debug.Log($"[DamageComponent] {gameObject.name} initialized — " +

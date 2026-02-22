@@ -1,8 +1,8 @@
+// BasicEnemyAI.cs
 using UnityEngine;
 
 /// <summary>
-/// Enemy AI: Chases and attacks player when visible, returns to spawn when not.
-/// Enemies use DamageComponent defaults (range=2, isAoE=false) since they have EnemySO.
+/// Enemy AI: Chases and attacks player when visible, patrols when not.
 /// </summary>
 public class BasicEnemyAI : BehaviorTreeRunner
 {
@@ -16,11 +16,10 @@ public class BasicEnemyAI : BehaviorTreeRunner
     {
         var root = new Selector(bb);
 
-        // Priority 1: Chase and attack
+        // Priority 1: Chase and attack player
         var chaseSeq = new Sequence(bb);
         chaseSeq.AddChild(new FindPlayer(bb, 15f, visionBlockingLayers));
-        chaseSeq.AddChild(new MoveTowardsTarget(bb, approachDistance));
-        chaseSeq.AddChild(new AttackTarget(bb, playerLayer));
+        chaseSeq.AddChild(new MoveAndAttack(bb, approachDistance, playerLayer));
         root.AddChild(chaseSeq);
 
         // Priority 2: Patrol

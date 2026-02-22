@@ -52,14 +52,25 @@ public class PatrolComponent : MonoBehaviour
             Vector3 candidate = spawnPosition + new Vector3(randomOffset.x, randomOffset.y, 0f);
 
             PathNode node = GridGenerator.Instance.GetNodeAtWorldPosition(candidate);
-            if (node == null)
-                node = GridGenerator.Instance.GetNearestWalkableNode(candidate, maxSearchRadius: 5);
 
-            if (node != null)
-                return node;
+            // Only use GetNearestWalkable as fallback, and validate it's still in radius
+            if (node == null)
+            {
+                node = GridGenerator.Instance.GetNearestWalkableNode(candidate, maxSearchRadius: 3);
+            }
+
+            if (node == null) continue;
+
+            // Reject if the found node is outside patrol radius
+            float distFromSpawn = Vector3.Distance(spawnPosition, node.transform.position);
+            if (distFromSpawn > patrolRadius) continue;
+
+            return node;
         }
 
-        return null;
+        // Fallback: return the node at spawn position itself
+        return GridGenerator.Instance.GetNodeAtWorldPosition(spawnPosition)
+            ?? GridGenerator.Instance.GetNearestWalkableNode(spawnPosition, maxSearchRadius: 5);
     }
 
     public void OnDrawGizmosSelected()
