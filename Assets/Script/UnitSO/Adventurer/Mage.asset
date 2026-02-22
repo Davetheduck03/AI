@@ -12,17 +12,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0e173050df1205d45a1abe9b1d3db176, type: 3}
   m_Name: Mage
   m_EditorClassIdentifier: 
-  UnitName: 
+  UnitName: Mage
   UnitPrefab: {fileID: 0}
   Icon: {fileID: 0}
-  Health: 0
-  Speed: 0
+  Health: 80
+  Speed: 3
   goldReward: 0
-  baseDamage: 0
-  baseAttackSpeed: 0
+  baseDamage: 30
+  baseAttackSpeed: 0.75
   armor: 0
   adventurerClass: {fileID: 11400000, guid: c82dafe48cbc03b4082d16d905272cac, type: 2}
-  fireRate: 0.75
-  range: 3
+  range: 4
   isAoE: 0
   projectileSpeed: 0

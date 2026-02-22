@@ -12,17 +12,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0e173050df1205d45a1abe9b1d3db176, type: 3}
   m_Name: Paladin
   m_EditorClassIdentifier: 
-  UnitName: 
+  UnitName: Paladin
   UnitPrefab: {fileID: 0}
   Icon: {fileID: 0}
-  Health: 0
-  Speed: 0
+  Health: 150
+  Speed: 3
   goldReward: 0
-  baseDamage: 0
-  baseAttackSpeed: 0
+  baseDamage: 15
+  baseAttackSpeed: 0.65
   armor: 0
   adventurerClass: {fileID: 11400000, guid: 535c0aea8337db64eab493b189de6809, type: 2}
-  fireRate: 0.65
-  range: 1
+  range: 2
   isAoE: 0
   projectileSpeed: 0

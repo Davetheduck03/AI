@@ -12,17 +12,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0e173050df1205d45a1abe9b1d3db176, type: 3}
   m_Name: Healer
   m_EditorClassIdentifier: 
-  UnitName: 
+  UnitName: Healer
   UnitPrefab: {fileID: 0}
   Icon: {fileID: 0}
-  Health: 0
-  Speed: 0
+  Health: 60
+  Speed: 2
   goldReward: 0
-  baseDamage: 0
-  baseAttackSpeed: 0
+  baseDamage: 30
+  baseAttackSpeed: 1.5
   armor: 0
   adventurerClass: {fileID: 11400000, guid: 45b4abbc04d2c984c9e37ae4a4cde425, type: 2}
-  fireRate: 1.5
-  range: 3
+  range: 4
   isAoE: 0
   projectileSpeed: 0
