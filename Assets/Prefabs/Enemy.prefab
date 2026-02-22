@@ -15,6 +15,10 @@ GameObject:
   - component: {fileID: 2427737257025890007}
   - component: {fileID: 8235120120489114769}
   - component: {fileID: 4743695967934832502}
+  - component: {fileID: 4120523249343284976}
+  - component: {fileID: 7761208913725432869}
+  - component: {fileID: 5866182457904485199}
+  - component: {fileID: 4557925363284672950}
   m_Layer: 6
   m_Name: Enemy
   m_TagString: Enemy
@@ -141,10 +145,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 685b21c29c908bb4eb8173a4885874da, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  currentHealth: 0
-  currentArmour: 0
-  isDamagable: 0
-  maxHealth: 0
 --- !u!114 &2427737257025890007
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -183,6 +183,66 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   fill: {fileID: 3404117577452784354}
+--- !u!114 &4120523249343284976
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3417378983756933604}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90924466f7a6f9046adbdd55e26be99c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  patrolRadius: 5
+  minWaitTime: 1
+  maxWaitTime: 3
+--- !u!114 &7761208913725432869
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3417378983756933604}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4b3a6c3b8675509408a4560a46bc9d33, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  movement_Speed: 0
+--- !u!114 &5866182457904485199
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3417378983756933604}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2efa0b856ba1f634592d996263de3d84, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &4557925363284672950
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3417378983756933604}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9cca52c578069d47adafe572e84931c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  target: {fileID: 0}
+  playerLayer:
+    serializedVersion: 2
+    m_Bits: 256
+  visionBlockingLayers:
+    serializedVersion: 2
+    m_Bits: 128
+  approachDistance: 2
 --- !u!1 &5900305378160852762
 GameObject:
   m_ObjectHideFlags: 0
