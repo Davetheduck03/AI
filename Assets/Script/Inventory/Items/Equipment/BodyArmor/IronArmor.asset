@@ -15,5 +15,5 @@ MonoBehaviour:
   ID: 0
   itemName: 
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: -729457782599078251, guid: da0b387b66ef5114eb2b6b2eb8392803, type: 3}
   statValue: 0

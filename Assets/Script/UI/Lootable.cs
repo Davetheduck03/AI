@@ -1,141 +1,106 @@
-﻿using System;
+﻿using NUnit.Framework.Internal.Execution;
+using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Simple Lootable script for manual UI setup.
-/// Create the canvas and fill bar manually in Unity Editor.
-/// </summary>
 public class Lootable : MonoBehaviour
 {
-    [Header("Loot Settings")]
-    [SerializeField] private float lootDuration = 2f;
-    [SerializeField] private GameObject lootReward;
+	[Header("Loot Settings")]
+	[SerializeField] private float lootDuration = 2f;
+	[SerializeField] private LootTable lootTable;           // assign in Inspector
+	[SerializeField] private GameObject worldItemPrefab;    // your WorldItem prefab
 
-    [Header("UI References - Assign Manually")]
-    [SerializeField] private GameObject lootBarUI;
-    [SerializeField] private Image fillImage;
+	[Header("UI References")]
+	[SerializeField] private GameObject lootBarUI;
+	[SerializeField] private Image fillImage;
 
-    public static event Action<Lootable> OnLootComplete;
+	public static event Action<Lootable> OnLootComplete;
 
-    private Coroutine lootCoroutine;
-    public bool isLooting = false;
-    public bool isLooted = false;
+	private Coroutine lootCoroutine;
+	public bool isLooting = false;
+	public bool isLooted = false;
 
-    private void Start()
-    {
-        HideLootBar();
-    }
+	private void Start() => HideLootBar();
 
-    public void Loot()
-    {
-        if (isLooted || isLooting) return;
+	public void Loot()
+	{
+		if (isLooted || isLooting) return;
+		lootCoroutine = StartCoroutine(LootCoroutine());
+	}
 
-        Debug.Log($"[Lootable] Starting loot on {gameObject.name}");
-        lootCoroutine = StartCoroutine(LootCoroutine());
-    }
+	public void CancelLoot()
+	{
+		if (lootCoroutine != null)
+		{
+			StopCoroutine(lootCoroutine);
+			lootCoroutine = null;
+		}
+		isLooting = false;
+		HideLootBar();
+	}
 
-    public void CancelLoot()
-    {
-        if (lootCoroutine != null)
-        {
-            StopCoroutine(lootCoroutine);
-            lootCoroutine = null;
-        }
+	private IEnumerator LootCoroutine()
+	{
+		isLooting = true;
+		ShowLootBar();
 
-        isLooting = false;
-        HideLootBar();
-        Debug.Log("[Lootable] Loot cancelled");
-    }
+		float elapsed = 0f;
+		while (elapsed < lootDuration)
+		{
+			elapsed += Time.deltaTime;
+			if (fillImage != null)
+				fillImage.fillAmount = Mathf.Clamp01(elapsed / lootDuration);
+			yield return null;
+		}
 
-    private IEnumerator LootCoroutine()
-    {
-        isLooting = true;
-        ShowLootBar();
+		if (fillImage != null) fillImage.fillAmount = 1f;
+		yield return new WaitForSeconds(0.2f);
 
-        float elapsed = 0f;
+		CompleteLoot();
+	}
 
-        while (elapsed < lootDuration)
-        {
-            elapsed += Time.deltaTime;
-            float progress = Mathf.Clamp01(elapsed / lootDuration);
+	private void CompleteLoot()
+	{
+		isLooting = false;
+		isLooted = true;
+		HideLootBar();
+		OnLootComplete?.Invoke(this);
+		SpawnLoot();
+		Destroy(gameObject);
+	}
 
-            if (fillImage != null)
-            {
-                fillImage.fillAmount = progress;
-            }
+	private void SpawnLoot()
+	{
+		if (lootTable == null || worldItemPrefab == null) return;
 
-            yield return null;
-        }
+		// Roll once per loot table entry slot — or just once if you want a single drop
+		ItemSO drop = lootTable.Roll();
+		if (drop == null) return;
 
-        // Ensure fill is complete
-        if (fillImage != null)
-        {
-            fillImage.fillAmount = 1f;
-        }
+		GameObject obj = Instantiate(worldItemPrefab, transform.position, Quaternion.identity);
+		WorldItem worldItem = obj.GetComponent<WorldItem>();
+		if (worldItem != null)
+			worldItem.item = drop;
+	}
 
-        yield return new WaitForSeconds(0.2f);
+	private void ShowLootBar()
+	{
+		if (lootBarUI != null) lootBarUI.SetActive(true);
+		else Debug.LogWarning("[Lootable] Loot Bar UI not assigned!");
+	}
 
-        CompleteLoot();
-    }
+	private void HideLootBar()
+	{
+		if (lootBarUI != null) lootBarUI.SetActive(false);
+		if (fillImage != null) fillImage.fillAmount = 0f;
+	}
 
-    private void CompleteLoot()
-    {
-        isLooting = false;
-        isLooted = true;
+	private void OnDestroy()
+	{
+		if (lootCoroutine != null) StopCoroutine(lootCoroutine);
+	}
 
-        HideLootBar();
-
-        OnLootComplete?.Invoke(this);
-
-        if (lootReward != null)
-        {
-            Instantiate(lootReward, transform.position, Quaternion.identity);
-        }
-
-        Debug.Log($"[Lootable] {gameObject.name} looted and destroyed");
-        Destroy(gameObject);
-    }
-
-    private void ShowLootBar()
-    {
-        if (lootBarUI != null)
-        {
-            lootBarUI.SetActive(true);
-            Debug.Log("[Lootable] Loot bar shown");
-        }
-        else
-        {
-            Debug.LogWarning("[Lootable] Loot Bar UI not assigned!");
-        }
-    }
-
-    private void HideLootBar()
-    {
-        if (lootBarUI != null)
-        {
-            lootBarUI.SetActive(false);
-        }
-
-        if (fillImage != null)
-        {
-            fillImage.fillAmount = 0f;
-        }
-    }
-
-    private void OnDestroy()
-    {
-        if (lootCoroutine != null)
-        {
-            StopCoroutine(lootCoroutine);
-        }
-    }
-
-    // Test in editor
-    [ContextMenu("Test Loot")]
-    private void TestLoot()
-    {
-        Loot();
-    }
+	[ContextMenu("Test Loot")]
+	private void TestLoot() => Loot();
 }

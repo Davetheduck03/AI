@@ -355,7 +355,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   lootDuration: 2
-  lootReward: {fileID: 0}
+  lootTable: {fileID: 11400000, guid: 24302976173991d4aac556d1984e4a3c, type: 2}
+  worldItemPrefab: {fileID: 3079422274475899644, guid: 4c61aa658c31018459be686ffd0745a2, type: 3}
   lootBarUI: {fileID: 5999726205998670380}
   fillImage: {fileID: 4535629133319523093}
   isLooting: 0
