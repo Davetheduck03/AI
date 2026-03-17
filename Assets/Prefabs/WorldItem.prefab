@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 5919211684777851695}
   m_Layer: 0
   m_Name: WorldItem
-  m_TagString: Untagged
+  m_TagString: WorldItem
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -46,7 +46,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0adf7a57b48f47346afd04f885961e4f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  item: {fileID: 0}
+  spriteRenderer: {fileID: 0}
 --- !u!58 &3539955011933753416
 CircleCollider2D:
   m_ObjectHideFlags: 0

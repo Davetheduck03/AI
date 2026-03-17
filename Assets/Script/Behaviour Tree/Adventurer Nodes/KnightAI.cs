@@ -30,16 +30,24 @@ public class KnightAI : BehaviorTreeRunner
         attackSeq.AddChild(new MoveAndAttack(bb, approachDistance, enemyLayer));
         root.AddChild(attackSeq);
 
+		// Priority 2: LOOT CHESTS
 		var lootSeq = new Sequence(bb);
 		lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
 		lootSeq.AddChild(new FindLootInRange(bb, 10f));
 		lootSeq.AddChild(new IsTargetRevealed(bb));
 		lootSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
 		lootSeq.AddChild(new LootTarget(bb));
-		lootSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 4f)); // ← new
 		root.AddChild(lootSeq);
 
-		// Priority 3: EXPLORE
+		// Priority 3: PICK UP WORLD ITEMS (dropped gear)
+		var worldItemSeq = new Sequence(bb);
+		worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
+		worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 4f));
+		worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.1f));
+		worldItemSeq.AddChild(new PickupItem(bb));
+		root.AddChild(worldItemSeq);
+
+		// Priority 4: EXPLORE
 		var exploreSeq = new Sequence(bb);
         exploreSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
         exploreSeq.AddChild(new FindFogCluster(bb, 50f));
