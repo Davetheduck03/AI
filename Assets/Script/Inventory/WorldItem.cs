@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
@@ -7,6 +8,13 @@ using UnityEngine;
 public class WorldItem : MonoBehaviour
 {
 	[SerializeField] private SpriteRenderer spriteRenderer;
+
+	// How long after spawning before the pickup trigger becomes active.
+	// Prevents the dropping hero from immediately re-absorbing the item.
+	private const float PickupDelay = 0.15f;
+
+	private Collider2D _collider;
+	private bool _pickupReady = false;
 
 	[SerializeField] private ItemSO _item;
 	public ItemSO item
@@ -36,6 +44,32 @@ public class WorldItem : MonoBehaviour
 			rb.bodyType = RigidbodyType2D.Kinematic;
 			rb.simulated = true;
 		}
+
+		_collider = GetComponent<Collider2D>();
+	}
+
+	private void Start()
+	{
+		// Disable the relic pickup trigger briefly after spawning so the hero
+		// who opened the chest isn't standing on top of it when it activates.
+		// (Equipment items are no longer picked up on contact — see OnTriggerEnter2D.)
+		if (_collider != null)
+		{
+			_collider.enabled = false;
+			StartCoroutine(EnablePickupAfterDelay());
+		}
+		else
+		{
+			_pickupReady = true;
+		}
+	}
+
+	private IEnumerator EnablePickupAfterDelay()
+	{
+		yield return new WaitForSeconds(PickupDelay);
+		if (_collider != null)
+			_collider.enabled = true;
+		_pickupReady = true;
 	}
 
 	private void OnEnable()  => WorldItemRegistry.Register(this);
@@ -49,9 +83,12 @@ public class WorldItem : MonoBehaviour
 
 	private void OnTriggerEnter2D(Collider2D other)
 	{
+		if (!_pickupReady) return;
 		if (_item == null) return;
 
 		// ── Relic pickup ──────────────────────────────────────────────────
+		// Relics are not managed by the behaviour-tree item system, so they
+		// are still picked up on contact.
 		if (_item is RelicSO relic)
 		{
 			RelicHolder holder = other.GetComponent<RelicHolder>();
@@ -63,12 +100,12 @@ public class WorldItem : MonoBehaviour
 			return;
 		}
 
-		// ── Normal equipment pickup ───────────────────────────────────────
-		EquipmentComponent equipment = other.GetComponent<EquipmentComponent>();
-		if (equipment == null) return;
-
-		bool equipped = equipment.TryEquipWithAssessment(_item, transform.position);
-		Debug.Log($"[WorldItem] {_item.itemName} {(equipped ? "equipped by" : "rejected by")} {other.name}");
-		Destroy(gameObject);
+		// ── Normal equipment ──────────────────────────────────────────────
+		// Equipment is handled exclusively by the behaviour tree:
+		//   EvaluateNearbyItems → MoveTowardsTarget → PickupItem
+		// Equipping on contact here ran in parallel with the BT path, causing
+		// heroes to silently fill a second armour slot while walking to their
+		// intended pickup target. The BT already evaluates items every tick via
+		// WorldItemRegistry, so nothing is lost by skipping contact pickup.
 	}
 }

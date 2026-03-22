@@ -10,6 +10,12 @@ public class FindFogCluster : Node
     private FogClusterExplorer clusterExplorer;
     private const string TARGET_NAME = "ClusterTarget";
 
+    // Minimum distance the cluster centre must be from the hero.
+    // If the target is already within this range MoveTowardsTarget would
+    // succeed immediately without the hero moving, so we skip it and let
+    // the cluster explorer fall back to a more distant unrevealed tile.
+    private const float MinExploreDistance = 2.5f;
+
     public FindFogCluster(Blackboard bb, float range = 100f) : base(bb)
     {
         maxSearchRange = range;
@@ -51,6 +57,17 @@ public class FindFogCluster : Node
         if (clusterTarget.HasValue)
         {
             float distance = Vector3.Distance(self.position, clusterTarget.Value);
+
+            if (distance < MinExploreDistance)
+            {
+                // The cluster centre is already on top of us — MoveTowardsTarget would
+                // succeed instantly without any movement, creating an infinite tight loop.
+                // Returning Failure here lets the BT fall back to other behaviours or
+                // simply wait a tick until the hero's position or revealed area changes.
+                Debug.Log($"FindFogCluster: Cluster at {clusterTarget.Value} is too close " +
+                          $"({distance:F1} < {MinExploreDistance}) — skipping to avoid spin");
+                return NodeState.Failure;
+            }
 
             if (distance <= maxSearchRange)
             {

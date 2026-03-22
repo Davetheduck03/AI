@@ -61,7 +61,7 @@ public class KnightAI : BehaviorTreeRunner
 		var exploreSeq = new Sequence(bb);
         exploreSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
         exploreSeq.AddChild(new FindFogCluster(bb, 50f));
-        exploreSeq.AddChild(new MoveTowardsTarget(bb, 2f));
+        exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f)); // must reach the fog tile, not just get close
         root.AddChild(exploreSeq);
 
         return root;

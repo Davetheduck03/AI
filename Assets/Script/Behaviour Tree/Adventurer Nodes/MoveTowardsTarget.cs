@@ -10,10 +10,13 @@ public class MoveTowardsTarget : Node
     private Transform lastTarget = null;
     private Vector3? actualDestination = null;
 
-    // Fail if we haven't arrived within this time — prevents infinite Running
-    // when A* can't find a path to the target (unreachable tiles, isolated rooms).
-    private const float MovementTimeout = 5f;
-    private float movementStartTime = 0f;
+    // Fail if the hero hasn't moved this far within the check interval.
+    // This catches truly unreachable targets (isolated rooms, tiles inside walls)
+    // without penalising long-but-valid paths across the full map.
+    private const float StuckCheckInterval = 3f;
+    private const float StuckDistanceThreshold = 0.5f;
+    private float nextStuckCheckTime = 0f;
+    private Vector3 lastCheckedPosition = Vector3.zero;
 
     public MoveTowardsTarget(Blackboard bb, float range = 3f) : base(bb)
     {
@@ -69,7 +72,8 @@ public class MoveTowardsTarget : Node
 
             movementComp.OnTriggerMove(self, target);
             lastTarget = target;
-            movementStartTime = Time.time;
+            lastCheckedPosition = self.position;
+            nextStuckCheckTime = Time.time + StuckCheckInterval;
         }
 
         // For enemies, check distance to the enemy itself
@@ -92,16 +96,25 @@ public class MoveTowardsTarget : Node
             return NodeState.Success;
         }
 
-        // If we've been moving toward this target for too long, the path is
-        // likely unreachable (isolated tile, blocked corridor, etc.).
-        // Return Failure so the BT can pick a different target next tick.
-        if (Time.time - movementStartTime > MovementTimeout)
+        // Periodically check if the hero has actually moved. If they haven't
+        // covered StuckDistanceThreshold units since the last check, the target
+        // is likely unreachable (isolated tile, blocked corridor, inside a wall).
+        // Long-but-valid paths across the full map pass this check fine because
+        // the hero IS making progress each interval.
+        if (Time.time >= nextStuckCheckTime)
         {
-            Debug.Log($"MoveTowardsTarget: Timed out moving to {target.name} — returning Failure");
-            UnitPathFollower pathFollower = self.GetComponent<UnitPathFollower>();
-            if (pathFollower != null) pathFollower.StopAllCoroutines();
-            Reset();
-            return NodeState.Failure;
+            float movedDistance = Vector3.Distance(self.position, lastCheckedPosition);
+            if (movedDistance < StuckDistanceThreshold)
+            {
+                Debug.Log($"MoveTowardsTarget: Hero hasn't moved ({movedDistance:F2} units in {StuckCheckInterval}s) — target likely unreachable, returning Failure");
+                UnitPathFollower pathFollower = self.GetComponent<UnitPathFollower>();
+                if (pathFollower != null) pathFollower.StopAllCoroutines();
+                Reset();
+                return NodeState.Failure;
+            }
+
+            lastCheckedPosition = self.position;
+            nextStuckCheckTime = Time.time + StuckCheckInterval;
         }
 
         return NodeState.Running;
@@ -109,7 +122,9 @@ public class MoveTowardsTarget : Node
 
     private void Reset()
     {
-        // lastTarget = null;  ← REMOVE
+        // lastTarget = null;  ← intentionally not cleared so target-change detection still works
         actualDestination = null;
+        nextStuckCheckTime = 0f;
+        lastCheckedPosition = Vector3.zero;
     }
 }
