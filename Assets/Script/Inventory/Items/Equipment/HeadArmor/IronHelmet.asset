@@ -12,8 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a53396340f29cb4094efa8114b32426, type: 3}
   m_Name: IronHelmet
   m_EditorClassIdentifier: 
-  ID: 0
-  itemName: 
-  Description: 
+  ID: 4
+  itemName: Iron Helmet
+  Description: A sturdy iron helmet. Provides solid head protection.
   Icon: {fileID: 4308275661547829421, guid: da0b387b66ef5114eb2b6b2eb8392803, type: 3}
-  statValue: 0
+  statValue: 7

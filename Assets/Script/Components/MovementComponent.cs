@@ -15,10 +15,18 @@ public class MovementComponent : UnitComponent
     public void OnTriggerMove(Transform self, Transform target)
     {
         PathNode start = GridGenerator.Instance.GetNodeAtWorldPosition(self.position);
-        PathNode goal = GridGenerator.Instance.GetNodeAtWorldPosition(target.position);
+        PathNode goal  = GridGenerator.Instance.GetNodeAtWorldPosition(target.position);
 
-        // If target is not on a walkable tile, find nearest walkable node
-        // Using optimized grid-based spiral search (much faster than iterating all nodes)
+        // If the hero stopped mid-tile (e.g. StopAllCoroutines called between nodes),
+        // their world position may not land on a tile centre. Snap to nearest node.
+        if (start == null)
+        {
+            start = GridGenerator.Instance.GetNearestWalkableNode(self.position, maxSearchRadius: 5);
+            if (start != null)
+                self.position = start.transform.position;   // snap hero back onto the grid
+        }
+
+        // Same fallback for the destination.
         if (goal == null)
         {
             Debug.LogWarning($"Target {target.position} not on walkable tile. Finding nearest...");
@@ -28,7 +36,7 @@ public class MovementComponent : UnitComponent
         // Validate nodes exist
         if (start == null)
         {
-            Debug.LogError($"Start position {self.position} has no PathNode!");
+            Debug.LogError($"Start position {self.position} has no walkable PathNode within range!");
             return;
         }
 

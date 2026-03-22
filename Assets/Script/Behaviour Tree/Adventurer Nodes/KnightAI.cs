@@ -24,6 +24,14 @@ public class KnightAI : BehaviorTreeRunner
     {
         var root = new Selector(bb);
 
+        // Priority 0: EXTRACT — runs only after the Relic is collected.
+        // Overrides combat/loot/explore — hero ignores everything and heads for the exit.
+        var extractSeq = new Sequence(bb);
+        extractSeq.AddChild(new SetExtractionTarget(bb));           // Fails if no relic
+        extractSeq.AddChild(new MoveTowardsTarget(bb, 1.0f));       // Walk to extraction point
+        extractSeq.AddChild(new TriggerWin(bb));                    // Fire Win state on arrival
+        root.AddChild(extractSeq);
+
         // Priority 1: ATTACK
         var attackSeq = new Sequence(bb);
         attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange));
@@ -40,10 +48,12 @@ public class KnightAI : BehaviorTreeRunner
 		root.AddChild(lootSeq);
 
 		// Priority 3: PICK UP WORLD ITEMS (dropped gear)
+		// approachRange matches LootTarget's maxLootDistance so the pathfinder
+		// can reliably arrive — PickupItem has no distance requirement of its own.
 		var worldItemSeq = new Sequence(bb);
 		worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
-		worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 4f));
-		worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.1f));
+		worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 8f));
+		worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
 		worldItemSeq.AddChild(new PickupItem(bb));
 		root.AddChild(worldItemSeq);
 

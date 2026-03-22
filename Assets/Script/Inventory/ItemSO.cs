@@ -9,9 +9,6 @@ public abstract class ItemSO : ScriptableObject
     public string Description;
     public Sprite Icon;
 
-    [Header("Value")]
-    public float statValue;
-
+    /// <summary>Returns a comparable score used by agents to decide whether to equip this item.</summary>
     public abstract float GetScore();
-    //Get the value for the Agents to compare equipments
 }

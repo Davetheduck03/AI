@@ -163,12 +163,24 @@ public class FogClusterExplorer : MonoBehaviour
     {
         if (positions.Count == 0) return Vector3.zero;
 
+        // Compute the arithmetic mean first…
         Vector3 sum = Vector3.zero;
         foreach (Vector3 pos in positions)
-        {
             sum += pos;
+        Vector3 avg = sum / positions.Count;
+
+        // …then return the actual tile closest to that mean.
+        // Returning the raw average produces fractional coordinates like (5.22, 21.83)
+        // that fall between tile centres and have no walkable PathNode, causing the
+        // "not on walkable tile, finding nearest" spam and unstable navigation.
+        Vector3 closest = positions[0];
+        float bestDist = Vector3.Distance(avg, closest);
+        for (int i = 1; i < positions.Count; i++)
+        {
+            float d = Vector3.Distance(avg, positions[i]);
+            if (d < bestDist) { bestDist = d; closest = positions[i]; }
         }
-        return sum / positions.Count;
+        return closest;
     }
 
     private class FogCluster

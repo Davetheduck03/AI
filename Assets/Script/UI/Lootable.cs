@@ -1,5 +1,4 @@
-﻿using NUnit.Framework.Internal.Execution;
-using System;
+﻿using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
@@ -8,8 +7,12 @@ public class Lootable : MonoBehaviour
 {
 	[Header("Loot Settings")]
 	[SerializeField] private float lootDuration = 2f;
-	[SerializeField] private LootTable lootTable;           // assign in Inspector
-	[SerializeField] private GameObject worldItemPrefab;    // your WorldItem prefab
+	[SerializeField] private LootTable lootTable;           // assign in Inspector or set via SetLootTable()
+	[SerializeField] private GameObject worldItemPrefab;    // assign in Inspector or set via SetWorldItemPrefab()
+
+	[Tooltip("If set, this item is always spawned in addition to the loot table roll. " +
+	         "Set at runtime by DungeonSpawner to guarantee the Relic drops from one chest.")]
+	[SerializeField] private ItemSO guaranteedItem;
 
 	[Header("UI References")]
 	[SerializeField] private GameObject lootBarUI;
@@ -20,6 +23,14 @@ public class Lootable : MonoBehaviour
 	private Coroutine lootCoroutine;
 	public bool isLooting = false;
 	public bool isLooted = false;
+
+	// ─── Runtime Setters (called by DungeonSpawner) ─────────────────────────
+
+	public void SetLootTable(LootTable table)          => lootTable       = table;
+	public void SetWorldItemPrefab(GameObject prefab)  => worldItemPrefab = prefab;
+	public void SetGuaranteedItem(ItemSO item)         => guaranteedItem  = item;
+
+	// ─── Lifecycle ───────────────────────────────────────────────────────────
 
 	private void Start() => HideLootBar();
 
@@ -72,16 +83,28 @@ public class Lootable : MonoBehaviour
 
 	private void SpawnLoot()
 	{
-		if (lootTable == null || worldItemPrefab == null) return;
+		if (worldItemPrefab == null) return;
 
-		// Roll once per loot table entry slot — or just once if you want a single drop
-		ItemSO drop = lootTable.Roll();
-		if (drop == null) return;
+		// Guaranteed item always drops (e.g. the Relic in the special chest)
+		if (guaranteedItem != null)
+			SpawnWorldItem(guaranteedItem);
 
-		GameObject obj = Instantiate(worldItemPrefab, transform.position, Quaternion.identity);
+		// Regular loot table roll
+		if (lootTable != null)
+		{
+			ItemSO drop = lootTable.Roll();
+			if (drop != null) SpawnWorldItem(drop);
+		}
+	}
+
+	private void SpawnWorldItem(ItemSO itemSO)
+	{
+		// Small scatter so multiple drops don't stack on the same pixel
+		Vector3 offset = new Vector3(UnityEngine.Random.Range(-0.3f, 0.3f), UnityEngine.Random.Range(-0.3f, 0.3f), 0);
+		GameObject obj = Instantiate(worldItemPrefab, transform.position + offset, Quaternion.identity);
 		WorldItem worldItem = obj.GetComponent<WorldItem>();
 		if (worldItem != null)
-			worldItem.item = drop;
+			worldItem.item = itemSO;
 	}
 
 	private void ShowLootBar()

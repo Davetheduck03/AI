@@ -5,6 +5,7 @@ using UnityEngine;
 /// with the highest absolute score and writes it to the blackboard as "target" and
 /// "targetWorldItem" for PickupItem to consume.
 /// Returns Success if a worthy item is found; Failure otherwise.
+/// Uses WorldItemRegistry instead of FindGameObjectsWithTag to avoid per-tick allocations.
 /// </summary>
 public class EvaluateNearbyItems : Node
 {
@@ -28,7 +29,6 @@ public class EvaluateNearbyItems : Node
 		if (bestItem == null)
 			return NodeState.Failure;
 
-		// Set movement target and also store the WorldItem reference for PickupItem
 		bb.Set("target", bestItem.transform);
 		bb.Set("targetWorldItem", bestItem);
 		Debug.Log($"[EvaluateNearbyItems] {self.name} targeting {bestItem.item?.itemName} " +
@@ -43,28 +43,24 @@ public class EvaluateNearbyItems : Node
 	/// </summary>
 	private WorldItem FindBestItem(Transform self, EquipmentComponent equipment)
 	{
-		GameObject[] worldItemObjects = GameObject.FindGameObjectsWithTag("WorldItem");
+		AdventurerClassSO adventurerClass = GetAdventurerClass(self);
 
 		WorldItem bestCandidate = null;
-		float bestScore = float.MinValue;
+		float     bestScore     = float.MinValue;
 
-		foreach (GameObject obj in worldItemObjects)
+		foreach (WorldItem worldItem in WorldItemRegistry.All)
 		{
-			if (obj == null) continue;
-
-			float dist = Vector2.Distance(self.position, obj.transform.position);
-			if (dist > searchRange) continue;
-
-			WorldItem worldItem = obj.GetComponent<WorldItem>();
 			if (worldItem == null || worldItem.item == null) continue;
+
+			float dist = Vector2.Distance(self.position, worldItem.transform.position);
+			if (dist > searchRange) continue;
 
 			ItemSO candidate = worldItem.item;
 
 			// Skip weapons this hero class cannot equip
-			if (candidate is WeaponSO weapon)
+			if (candidate is WeaponSO weapon && adventurerClass != null)
 			{
-				AdventurerClassSO adventurerClass = GetAdventurerClass(self);
-				if (adventurerClass != null && !adventurerClass.CanEquipWeapon(weapon))
+				if (!adventurerClass.CanEquipWeapon(weapon))
 					continue;
 			}
 

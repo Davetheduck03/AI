@@ -33,10 +33,8 @@ public class FogOfWarManager : MonoBehaviour
     private const int maxRecentTargets = 5;
     private int consecutiveFailedSearches = 0;
 
-    private void Start()
-    {
-        InitializeFog();
-    }
+    private void OnEnable()  => DungeonGenerator.OnDungeonGenerated += InitializeFog;
+    private void OnDisable() => DungeonGenerator.OnDungeonGenerated -= InitializeFog;
 
     private void InitializeFog()
     {

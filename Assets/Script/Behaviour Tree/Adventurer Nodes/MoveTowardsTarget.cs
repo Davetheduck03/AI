@@ -10,6 +10,11 @@ public class MoveTowardsTarget : Node
     private Transform lastTarget = null;
     private Vector3? actualDestination = null;
 
+    // Fail if we haven't arrived within this time — prevents infinite Running
+    // when A* can't find a path to the target (unreachable tiles, isolated rooms).
+    private const float MovementTimeout = 5f;
+    private float movementStartTime = 0f;
+
     public MoveTowardsTarget(Blackboard bb, float range = 3f) : base(bb)
     {
         this.approachRange = range;
@@ -64,6 +69,7 @@ public class MoveTowardsTarget : Node
 
             movementComp.OnTriggerMove(self, target);
             lastTarget = target;
+            movementStartTime = Time.time;
         }
 
         // For enemies, check distance to the enemy itself
@@ -84,6 +90,18 @@ public class MoveTowardsTarget : Node
 
             Reset();
             return NodeState.Success;
+        }
+
+        // If we've been moving toward this target for too long, the path is
+        // likely unreachable (isolated tile, blocked corridor, etc.).
+        // Return Failure so the BT can pick a different target next tick.
+        if (Time.time - movementStartTime > MovementTimeout)
+        {
+            Debug.Log($"MoveTowardsTarget: Timed out moving to {target.name} — returning Failure");
+            UnitPathFollower pathFollower = self.GetComponent<UnitPathFollower>();
+            if (pathFollower != null) pathFollower.StopAllCoroutines();
+            Reset();
+            return NodeState.Failure;
         }
 
         return NodeState.Running;

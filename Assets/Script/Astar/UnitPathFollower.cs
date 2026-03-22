@@ -8,6 +8,10 @@ public class UnitPathFollower : MonoBehaviour
     private int currentIndex = 0;
     private MovementComponent movementComp;
 
+    // Track whether HandleNodeBlocked is subscribed so we can safely
+    // unsubscribe even when StopAllCoroutines() cuts the coroutine short.
+    private bool _nodeListenerActive = false;
+
     public void SetPath(List<PathNode> newPath, float moveSpeed, MovementComponent mc = null)
     {
         path = newPath;
@@ -39,9 +43,35 @@ public class UnitPathFollower : MonoBehaviour
         });
     }
 
+    private void OnDisable()
+    {
+        // Ensure the listener is removed if this component is disabled or the
+        // GameObject is destroyed while a path was being followed — prevents
+        // ghost RecalculatePath calls after StopAllCoroutines() cuts the coroutine.
+        UnsubscribeNodeListener();
+    }
+
+    private void SubscribeNodeListener()
+    {
+        if (!_nodeListenerActive)
+        {
+            PathNode.OnNodeUpdated += HandleNodeBlocked;
+            _nodeListenerActive = true;
+        }
+    }
+
+    private void UnsubscribeNodeListener()
+    {
+        if (_nodeListenerActive)
+        {
+            PathNode.OnNodeUpdated -= HandleNodeBlocked;
+            _nodeListenerActive = false;
+        }
+    }
+
     private IEnumerator FollowPath(float moveSpeed)
     {
-        PathNode.OnNodeUpdated += HandleNodeBlocked;
+        SubscribeNodeListener();
 
         while (currentIndex < path.Count)
         {
@@ -54,7 +84,8 @@ public class UnitPathFollower : MonoBehaviour
             }
 
             Vector2 targetPos = new Vector2(targetNode.transform.position.x, targetNode.transform.position.y);
-            float tolerance = 0.1f;
+            float tolerance = 0.25f;   // Looser tolerance — lets the hero advance to the next
+                                       // node even when a wall prevents reaching the exact centre.
 
             Debug.Log($"Moving to node {currentIndex}: {targetNode.name} at {targetPos}");
 
@@ -86,7 +117,7 @@ public class UnitPathFollower : MonoBehaviour
             currentIndex++;
         }
 
-        PathNode.OnNodeUpdated -= HandleNodeBlocked;
+        UnsubscribeNodeListener();
         Debug.Log("Path Complete!");
     }
 

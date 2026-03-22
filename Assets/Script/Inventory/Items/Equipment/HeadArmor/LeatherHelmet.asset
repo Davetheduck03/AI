@@ -12,8 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a53396340f29cb4094efa8114b32426, type: 3}
   m_Name: LeatherHelmet
   m_EditorClassIdentifier: 
-  ID: 0
-  itemName: 
-  Description: 
+  ID: 2
+  itemName: Leather Helmet
+  Description: A light leather helmet. Offers basic head protection.
   Icon: {fileID: -6333906335068908633, guid: da0b387b66ef5114eb2b6b2eb8392803, type: 3}
-  statValue: 0
+  statValue: 3

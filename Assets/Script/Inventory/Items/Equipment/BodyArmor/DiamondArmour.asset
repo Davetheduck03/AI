@@ -12,8 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 31ae14ca0ebfe5f4ba94fabb9f6b4386, type: 3}
   m_Name: DiamondArmour
   m_EditorClassIdentifier: 
-  ID: 0
-  itemName: 
-  Description: 
+  ID: 5
+  itemName: Diamond Armour
+  Description: The pinnacle of body armour. Forged from enchanted diamond, virtually
+    indestructible.
   Icon: {fileID: 4560368348972315173, guid: da0b387b66ef5114eb2b6b2eb8392803, type: 3}
-  statValue: 0
+  statValue: 20

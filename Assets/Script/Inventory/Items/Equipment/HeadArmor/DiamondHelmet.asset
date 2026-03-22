@@ -12,8 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a53396340f29cb4094efa8114b32426, type: 3}
   m_Name: DiamondHelmet
   m_EditorClassIdentifier: 
-  ID: 0
-  itemName: 
-  Description: 
+  ID: 6
+  itemName: Diamond Helmet
+  Description: A magnificent diamond helmet. Near impenetrable protection for the
+    head.
   Icon: {fileID: 4584914164752117794, guid: da0b387b66ef5114eb2b6b2eb8392803, type: 3}
-  statValue: 0
+  statValue: 15

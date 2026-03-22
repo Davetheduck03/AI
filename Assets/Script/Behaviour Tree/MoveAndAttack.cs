@@ -13,6 +13,12 @@ public class MoveAndAttack : Node
     private Transform lastTarget = null;
     private bool arrived = false;
 
+    // If the hero hasn't arrived within this many seconds of triggering
+    // movement, the target is considered unreachable and we return Failure
+    // so the BT can fall through to other behaviours.
+    private const float MovementTimeout = 4f;
+    private float movementStartTime = 0f;
+
     public MoveAndAttack(Blackboard bb, float approachDistance, LayerMask targetLayer) : base(bb)
     {
         this.approachDistance = approachDistance;
@@ -40,6 +46,7 @@ public class MoveAndAttack : Node
         {
             arrived = false;
             lastTarget = target;
+            movementStartTime = Time.time;
             TriggerMovement(self, target);
             return NodeState.Running;
         }
@@ -48,6 +55,7 @@ public class MoveAndAttack : Node
         if (arrived && dist > approachDistance * 1.2f)
         {
             arrived = false;
+            movementStartTime = Time.time;
             TriggerMovement(self, target);
             return NodeState.Running;
         }
@@ -62,6 +70,16 @@ public class MoveAndAttack : Node
             }
             else
             {
+                // Give up if we've been chasing for too long without arriving —
+                // A* likely found no path (target is behind a wall/in an isolated area).
+                if (Time.time - movementStartTime > MovementTimeout)
+                {
+                    Debug.Log($"[MoveAndAttack] Timed out chasing {target?.name} — returning Failure");
+                    arrived = false;
+                    lastTarget = null;
+                    StopMovement(self);
+                    return NodeState.Failure;
+                }
                 return NodeState.Running;
             }
         }

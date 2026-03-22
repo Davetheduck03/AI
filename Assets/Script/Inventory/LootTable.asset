@@ -25,4 +25,14 @@ MonoBehaviour:
     weight: 5
   - item: {fileID: 11400000, guid: ee37abbf76e0a4b41a4b2eb9354ffdef, type: 2}
     weight: 5
+  - item: {fileID: 11400000, guid: ee37abbf76e0a4b41a4b2eb9354ffdef, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: ee37abbf76e0a4b41a4b2eb9354ffdef, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: ee37abbf76e0a4b41a4b2eb9354ffdef, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: ee37abbf76e0a4b41a4b2eb9354ffdef, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: ee37abbf76e0a4b41a4b2eb9354ffdef, type: 2}
+    weight: 5
   dropChance: 100

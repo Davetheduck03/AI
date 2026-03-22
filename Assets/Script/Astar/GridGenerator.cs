@@ -113,6 +113,25 @@ public class GridGenerator : MonoBehaviour
         return null;
     }
 
+    /// <summary>
+    /// Destroys all existing PathNode objects, clears A*'s node list, then
+    /// re-reads the (now repainted) walkable tilemap to build a fresh grid.
+    /// Call this after DungeonGenerator.Regenerate() has painted new tiles.
+    /// </summary>
+    public void RegenerateGrid()
+    {
+        // Destroy all existing node GameObjects
+        foreach (var node in Astar.Instance.allNodes)
+            if (node != null) Destroy(node.gameObject);
+
+        Astar.Instance.allNodes.Clear();
+        grid = null;
+
+        GenerateGrid();
+        LinkNeighbors();
+        StartCoroutine(WaitTillEndOfFrame());
+    }
+
     private IEnumerator WaitTillEndOfFrame()
     {
         yield return new WaitForEndOfFrame();

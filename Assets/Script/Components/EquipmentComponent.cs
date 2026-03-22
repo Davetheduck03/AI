@@ -27,7 +27,8 @@ public class EquipmentComponent : UnitComponent
 		{
 			adventurerClass = heroData.adventurerClass;
 			if (adventurerClass == null)
-				Debug.LogWarning($"[EquipmentComponent] {gameObject.name} has no AdventurerClass in HeroSO!");
+				Debug.LogWarning($"[EquipmentComponent] {gameObject.name} has no AdventurerClass in HeroSO! " +
+				                 "This hero will be able to equip any weapon type.");
 			else
 				Debug.Log($"[EquipmentComponent] {gameObject.name} initialized as {adventurerClass.className}");
 		}
@@ -38,14 +39,15 @@ public class EquipmentComponent : UnitComponent
 	// ─────────────────────────────────────────────
 
 	/// <summary>
-	/// Called by WorldItem when an adventurer walks over it.
-	/// Assesses stat difference — equips and drops old if better, destroys world item if not.
+	/// Called by WorldItem / PickupItem when an adventurer picks up an item.
+	/// Compares scores — equips and drops old if better.
+	/// Returns true if the item was equipped, false if it was rejected.
 	/// </summary>
-	public void TryEquipWithAssessment(ItemSO newItem, Vector3 worldItemPosition)
+	public bool TryEquipWithAssessment(ItemSO newItem, Vector3 worldItemPosition)
 	{
-		if (newItem == null) return;
+		if (newItem == null) return false;
 
-		float newScore = newItem.GetScore();
+		float newScore     = newItem.GetScore();
 		float currentScore = GetCurrentScore(newItem);
 
 		bool isBetter = IsBetterItem(newItem, newScore, currentScore);
@@ -56,21 +58,20 @@ public class EquipmentComponent : UnitComponent
 		if (!isBetter)
 		{
 			Debug.Log($"[Equipment] {gameObject.name} ignores {newItem.itemName} — current gear is better.");
-			return;
+			return false;
 		}
 
 		// Drop current item before equipping new one
-		DropCurrentItem(newItem, worldItemPosition);
+		DropCurrentItem(newItem);
 
-		// Equip the new item (suppress score check — we already assessed)
+		// Equip the new item (score already assessed above)
 		ForceEquip(newItem);
-
-		// Destroy the world item
-		// WorldItem destroys itself via the trigger — handled in WorldItem.cs
+		return true;
 	}
 
 	/// <summary>
-	/// Original path — used internally and for direct equips (e.g. starting gear).
+	/// Direct equip path — used for starting gear and other programmatic equips.
+	/// Checks class restrictions and score, but does NOT drop the old item.
 	/// </summary>
 	public bool TryEquip(ItemSO newItem)
 	{
@@ -85,24 +86,23 @@ public class EquipmentComponent : UnitComponent
 	// ─────────────────────────────────────────────
 
 	/// <summary>
-	/// Gets the score of whichever currently equipped item matches the slot of newItem.
-	/// Returns 0 if slot is empty.
+	/// Returns the score of whichever currently equipped item occupies the same slot as newItem.
+	/// Returns 0 if the slot is empty.
 	/// </summary>
 	private float GetCurrentScore(ItemSO newItem)
 	{
-		if (newItem is WeaponSO) return equippedWeapon?.GetScore() ?? 0f;
-		if (newItem is HeadArmorSO) return equippedHead?.GetScore() ?? 0f;
-		if (newItem is BodyArmorSO) return equippedBody?.GetScore() ?? 0f;
+		if (newItem is WeaponSO)    return equippedWeapon?.GetScore() ?? 0f;
+		if (newItem is HeadArmorSO) return equippedHead?.GetScore()   ?? 0f;
+		if (newItem is BodyArmorSO) return equippedBody?.GetScore()   ?? 0f;
 		return 0f;
 	}
 
 	/// <summary>
 	/// Returns true if the new item is worth equipping.
-	/// Handles class restriction for weapons.
+	/// Note: a null adventurerClass means no weapon-type restrictions apply for this hero.
 	/// </summary>
 	private bool IsBetterItem(ItemSO newItem, float newScore, float currentScore)
 	{
-		// Class restriction check for weapons
 		if (newItem is WeaponSO weapon && adventurerClass != null)
 		{
 			if (!adventurerClass.CanEquipWeapon(weapon))
@@ -121,43 +121,49 @@ public class EquipmentComponent : UnitComponent
 	// ─────────────────────────────────────────────
 
 	/// <summary>
-	/// Spawns the currently equipped item in the given slot as a WorldItem at dropPosition.
-	/// Only drops if that slot matches the incoming item type.
+	/// Spawns the currently equipped item (for the same slot as incomingItem) as a WorldItem
+	/// at the hero's feet. Does nothing if the slot is empty or worldItemPrefab is not assigned.
 	/// </summary>
-	private void DropCurrentItem(ItemSO incomingItem, Vector3 dropPosition)
+	private void DropCurrentItem(ItemSO incomingItem)
 	{
 		ItemSO toDrop = null;
 
-		if (incomingItem is WeaponSO && equippedWeapon != null)
-			toDrop = equippedWeapon;
-		else if (incomingItem is HeadArmorSO && equippedHead != null)
-			toDrop = equippedHead;
-		else if (incomingItem is BodyArmorSO && equippedBody != null)
-			toDrop = equippedBody;
+		if      (incomingItem is WeaponSO    && equippedWeapon != null) toDrop = equippedWeapon;
+		else if (incomingItem is HeadArmorSO && equippedHead   != null) toDrop = equippedHead;
+		else if (incomingItem is BodyArmorSO && equippedBody   != null) toDrop = equippedBody;
 
-		if (toDrop == null || worldItemPrefab == null) return;
+		if (toDrop == null) return;
 
-		Vector3 scatter = new Vector3(
-			Random.Range(-0.4f, 0.4f),
-			Random.Range(-0.4f, 0.4f), 0);
+		if (worldItemPrefab == null)
+		{
+			Debug.LogWarning($"[Equipment] {gameObject.name} tried to drop {toDrop.itemName} " +
+			                 "but worldItemPrefab is not assigned on EquipmentComponent!");
+			return;
+		}
 
-		GameObject dropped = Instantiate(worldItemPrefab, dropPosition + scatter, Quaternion.identity);
+		// Drop at the hero's current position with a small offset so it doesn't
+		// land exactly under them (which would immediately re-trigger pickup).
+		Vector3 scatter = new Vector3(Random.Range(0.5f, 0.8f), 0, 0);
+		scatter = Quaternion.Euler(0, 0, Random.Range(0f, 360f)) * scatter;
+		Vector3 spawnPos = transform.position + scatter;
+
+		GameObject dropped = Instantiate(worldItemPrefab, spawnPos, Quaternion.identity);
 		WorldItem worldItem = dropped.GetComponent<WorldItem>();
 		if (worldItem != null)
 			worldItem.item = toDrop;
 
-		Debug.Log($"[Equipment] {gameObject.name} dropped {toDrop.itemName} at {dropPosition}");
+		Debug.Log($"[Equipment] {gameObject.name} dropped {toDrop.itemName} at {spawnPos}");
 	}
 
 	// ─────────────────────────────────────────────
-	// FORCE EQUIP (bypasses score check)
+	// FORCE EQUIP — bypasses score check, used internally
 	// ─────────────────────────────────────────────
 
 	private void ForceEquip(ItemSO newItem)
 	{
-		if (newItem is WeaponSO weapon) ForceEquipWeapon(weapon);
-		else if (newItem is HeadArmorSO head) ForceEquipHead(head);
-		else if (newItem is BodyArmorSO body) ForceEquipBody(body);
+		if      (newItem is WeaponSO weapon)    ForceEquipWeapon(weapon);
+		else if (newItem is HeadArmorSO head)   ForceEquipHead(head);
+		else if (newItem is BodyArmorSO body)   ForceEquipBody(body);
 	}
 
 	private void ForceEquipWeapon(WeaponSO newWeapon)
@@ -168,8 +174,8 @@ public class EquipmentComponent : UnitComponent
 			damageComp?.AddAttackSpeedBonus(-appliedWeaponAttackSpeed);
 		}
 
-		equippedWeapon = newWeapon;
-		appliedWeaponDamage = newWeapon.damageBonus;
+		equippedWeapon         = newWeapon;
+		appliedWeaponDamage    = newWeapon.damageBonus;
 		appliedWeaponAttackSpeed = newWeapon.attackSpeedBonus;
 
 		damageComp?.AddDamageBonus(appliedWeaponDamage);
@@ -184,8 +190,8 @@ public class EquipmentComponent : UnitComponent
 		if (equippedHead != null)
 			healthComp?.AddArmorBonus(-appliedHeadArmor);
 
-		equippedHead = newHead;
-		appliedHeadArmor = newHead.statValue;
+		equippedHead      = newHead;
+		appliedHeadArmor  = newHead.statValue;
 		healthComp?.AddArmorBonus(appliedHeadArmor);
 
 		Debug.Log($"[Equipment] {gameObject.name} equipped {newHead.itemName} → " +
@@ -197,8 +203,8 @@ public class EquipmentComponent : UnitComponent
 		if (equippedBody != null)
 			healthComp?.AddArmorBonus(-appliedBodyArmor);
 
-		equippedBody = newBody;
-		appliedBodyArmor = newBody.statValue;
+		equippedBody      = newBody;
+		appliedBodyArmor  = newBody.statValue;
 		healthComp?.AddArmorBonus(appliedBodyArmor);
 
 		Debug.Log($"[Equipment] {gameObject.name} equipped {newBody.itemName} → " +
@@ -206,29 +212,16 @@ public class EquipmentComponent : UnitComponent
 	}
 
 	// ─────────────────────────────────────────────
-	// ORIGINAL EQUIP (used by TryEquip, kept for compatibility)
+	// GATED EQUIP — checks restrictions & score, then delegates to ForceEquip*
 	// ─────────────────────────────────────────────
 
 	private bool TryEquipWeapon(WeaponSO newWeapon)
 	{
 		if (adventurerClass != null && !adventurerClass.CanEquipWeapon(newWeapon))
 			return false;
-
 		if (equippedWeapon != null && newWeapon.GetScore() <= equippedWeapon.GetScore())
 			return false;
-
-		if (equippedWeapon != null)
-		{
-			damageComp?.AddDamageBonus(-appliedWeaponDamage);
-			damageComp?.AddAttackSpeedBonus(-appliedWeaponAttackSpeed);
-		}
-
-		equippedWeapon = newWeapon;
-		appliedWeaponDamage = newWeapon.damageBonus;
-		appliedWeaponAttackSpeed = newWeapon.attackSpeedBonus;
-
-		damageComp?.AddDamageBonus(appliedWeaponDamage);
-		damageComp?.AddAttackSpeedBonus(appliedWeaponAttackSpeed);
+		ForceEquipWeapon(newWeapon);
 		return true;
 	}
 
@@ -236,13 +229,7 @@ public class EquipmentComponent : UnitComponent
 	{
 		if (equippedHead != null && newHead.GetScore() <= equippedHead.GetScore())
 			return false;
-
-		if (equippedHead != null)
-			healthComp?.AddArmorBonus(-appliedHeadArmor);
-
-		equippedHead = newHead;
-		appliedHeadArmor = newHead.statValue;
-		healthComp?.AddArmorBonus(appliedHeadArmor);
+		ForceEquipHead(newHead);
 		return true;
 	}
 
@@ -250,13 +237,7 @@ public class EquipmentComponent : UnitComponent
 	{
 		if (equippedBody != null && newBody.GetScore() <= equippedBody.GetScore())
 			return false;
-
-		if (equippedBody != null)
-			healthComp?.AddArmorBonus(-appliedBodyArmor);
-
-		equippedBody = newBody;
-		appliedBodyArmor = newBody.statValue;
-		healthComp?.AddArmorBonus(appliedBodyArmor);
+		ForceEquipBody(newBody);
 		return true;
 	}
 
@@ -264,7 +245,7 @@ public class EquipmentComponent : UnitComponent
 	{
 		Debug.Log($"[{gameObject.name} Loadout] " +
 				  $"Weapon: {(equippedWeapon != null ? equippedWeapon.itemName : "none")} | " +
-				  $"Head: {(equippedHead != null ? equippedHead.itemName : "none")} | " +
-				  $"Body: {(equippedBody != null ? equippedBody.itemName : "none")}");
+				  $"Head: {(equippedHead   != null ? equippedHead.itemName   : "none")} | " +
+				  $"Body: {(equippedBody   != null ? equippedBody.itemName   : "none")}");
 	}
 }

@@ -12,8 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 31ae14ca0ebfe5f4ba94fabb9f6b4386, type: 3}
   m_Name: LeatherTunic
   m_EditorClassIdentifier: 
-  ID: 0
-  itemName: 
-  Description: 
+  ID: 1
+  itemName: Leather Tunic
+  Description: A flexible leather tunic. Lightweight body protection for adventurers.
   Icon: {fileID: -5306712919910980762, guid: da0b387b66ef5114eb2b6b2eb8392803, type: 3}
-  statValue: 0
+  statValue: 5

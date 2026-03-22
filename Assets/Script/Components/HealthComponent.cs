@@ -1,7 +1,11 @@
+using System;
 using UnityEngine;
 
 public class HealthComponent : UnitComponent
 {
+    /// <summary>Fired just before the owning GameObject is destroyed. Used by BaseHero to trigger the lose state.</summary>
+    public static event Action<HealthComponent> OnDeath;
+
     public float currentHealth { get; private set; }
     public float maxHealth { get; private set; }
     public bool isDamagable { get; private set; }
@@ -52,8 +56,16 @@ public class HealthComponent : UnitComponent
             Die();
     }
 
+    /// <summary>Resets health to max and re-enables damage. Used when the hero is respawned.</summary>
+    public void ResetHealth()
+    {
+        currentHealth = maxHealth;
+        isDamagable   = true;
+    }
+
     private void Die()
     {
+        OnDeath?.Invoke(this);
         Destroy(gameObject);
     }
 }
