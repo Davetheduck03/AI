@@ -51,23 +51,13 @@ public class FindFogCluster : Node
             healthPercent = healthComp.currentHealth / healthComp.maxHealth;
         }
 
-        // Find best cluster
-        Vector3? clusterTarget = clusterExplorer.GetBestExplorationTarget(self.position, healthPercent);
+        // Find best cluster — clusters within MinExploreDistance are filtered inside
+        // GetBestExplorationTarget so we always get a reachable, non-trivial destination.
+        Vector3? clusterTarget = clusterExplorer.GetBestExplorationTarget(self.position, healthPercent, MinExploreDistance);
 
         if (clusterTarget.HasValue)
         {
             float distance = Vector3.Distance(self.position, clusterTarget.Value);
-
-            if (distance < MinExploreDistance)
-            {
-                // The cluster centre is already on top of us — MoveTowardsTarget would
-                // succeed instantly without any movement, creating an infinite tight loop.
-                // Returning Failure here lets the BT fall back to other behaviours or
-                // simply wait a tick until the hero's position or revealed area changes.
-                Debug.Log($"FindFogCluster: Cluster at {clusterTarget.Value} is too close " +
-                          $"({distance:F1} < {MinExploreDistance}) — skipping to avoid spin");
-                return NodeState.Failure;
-            }
 
             if (distance <= maxSearchRange)
             {
