@@ -31,8 +31,10 @@ public class FogClusterExplorer : MonoBehaviour
     /// <summary>
     /// Get the best fog cluster to explore from current position.
     /// Returns center of largest nearby fog cluster, considering health.
+    /// Clusters closer than <paramref name="minDistance"/> are skipped; falls back to
+    /// the nearest individual unrevealed tile when no qualifying cluster exists.
     /// </summary>
-    public Vector3? GetBestExplorationTarget(Vector3 fromPosition, float currentHealthPercent)
+    public Vector3? GetBestExplorationTarget(Vector3 fromPosition, float currentHealthPercent, float minDistance = 0f)
     {
         if (fogManager == null) return null;
 
@@ -57,6 +59,18 @@ public class FogClusterExplorer : MonoBehaviour
         {
             Debug.Log("FogClusterExplorer: All clusters too dangerous for current health");
             return GetNearestFog(unrevealedTiles, fromPosition);
+        }
+
+        // Skip clusters that are too close — we'd arrive without meaningful exploration.
+        if (minDistance > 0f)
+            validClusters = validClusters.Where(c => c.distanceFromPlayer >= minDistance).ToList();
+
+        if (validClusters.Count == 0)
+        {
+            // All clusters are within minDistance; fall back to the nearest individual tile
+            // that is at least minDistance away so the hero actually has to walk somewhere.
+            Vector3? fallback = GetNearestFogBeyond(unrevealedTiles, fromPosition, minDistance);
+            return fallback ?? GetNearestFog(unrevealedTiles, fromPosition);
         }
 
         FogCluster bestCluster = validClusters.OrderBy(c => c.distanceFromPlayer).First();
@@ -150,6 +164,24 @@ public class FogClusterExplorer : MonoBehaviour
         {
             float dist = Vector3.Distance(fromPosition, fog);
             if (dist < closestDist)
+            {
+                closestDist = dist;
+                nearest = fog;
+            }
+        }
+
+        return nearest;
+    }
+
+    private Vector3? GetNearestFogBeyond(List<Vector3> fogTiles, Vector3 fromPosition, float minDistance)
+    {
+        Vector3? nearest = null;
+        float closestDist = float.MaxValue;
+
+        foreach (Vector3 fog in fogTiles)
+        {
+            float dist = Vector3.Distance(fromPosition, fog);
+            if (dist >= minDistance && dist < closestDist)
             {
                 closestDist = dist;
                 nearest = fog;
