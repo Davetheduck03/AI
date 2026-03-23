@@ -10,12 +10,12 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 69a8f2adc33ef5d44a9b23cf81c37ede, type: 3}
-  m_Name: Wooden Sword
+  m_Name: Copper Dagger
   m_EditorClassIdentifier: 
-  ID: 7
-  itemName: Wooden Sword
+  ID: 16
+  itemName: Copper Dagger
   Description: 
   Icon: {fileID: 0}
-  weaponType: 0
-  damageBonus: 0
-  attackSpeedBonus: 0
+  weaponType: 3
+  damageBonus: 5
+  attackSpeedBonus: 0.25

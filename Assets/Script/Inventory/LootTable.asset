@@ -25,4 +25,34 @@ MonoBehaviour:
     weight: 5
   - item: {fileID: 11400000, guid: ee37abbf76e0a4b41a4b2eb9354ffdef, type: 2}
     weight: 5
+  - item: {fileID: 11400000, guid: 9933ea38422d6fe41948c891d58c3276, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 8e955a30bdad2b14884eb5df6fc8641b, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 3e8aeeab98e51e442b80f3b60b281b5b, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 13cebfc03f65cbc499731dade5f3eade, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 13cebfc03f65cbc499731dade5f3eade, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 6cb23600086a6404fb9092a61fbec465, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 6cb23600086a6404fb9092a61fbec465, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 6cb23600086a6404fb9092a61fbec465, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 6cb23600086a6404fb9092a61fbec465, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: a73a9a9823c8ad64db26e5711aef74b4, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 49e3671ebcc24ba418a78b23df293396, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 16a2e38926cb5464e9763466ff513229, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 866a7ebc376c8b14ea89a1595438900e, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 2c5d15f84a6fbf44a96b0a6c2454602e, type: 2}
+    weight: 5
+  - item: {fileID: 11400000, guid: 3be75a2f407fcd041b0c9f6330e61381, type: 2}
+    weight: 5
   dropChance: 100
