@@ -14,4 +14,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   className: Paladin
   classIcon: {fileID: 0}
+  startingWeapon: {fileID: 11400000, guid: 3e8aeeab98e51e442b80f3b60b281b5b, type: 2}
   allowedWeaponTypes: 000000000100000002000000

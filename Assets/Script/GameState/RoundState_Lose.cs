@@ -17,21 +17,15 @@ public class RoundState_Lose : RoundState_Base
     {
         Debug.Log("[RoundState_Lose] Hero died — regenerating dungeon.");
 
-        // 1. Destroy enemies, chests, world items, and the old hero instance
+        // 1. Destroy all heroes, enemies, chests, and world items
         DungeonSpawner.Instance?.CleanupAll();
 
-        // 2. TODO: FogOfWarManager.Instance?.ResetFog();
-        //    Uncomment and implement if you want fog to reset each round.
+        // 2. Clear the party selection so the player drafts a fresh team.
+        //    (Dungeon regeneration happens when they confirm their new party.)
+        PartyData.Instance?.ClearParty();
 
-        // 3. Paint a fresh dungeon onto the tilemaps
-        DungeonGenerator.Instance?.Regenerate();
-
-        // 4. Rebuild pathfinding nodes from the new tiles.
-        //    This fires OnGridGenerated at end-of-frame → DungeonSpawner.SpawnAll() runs.
-        GridGenerator.Instance?.RegenerateGrid();
-
-        // 5. Back to gameplay immediately (spawning happens asynchronously via events)
-        gm.SwitchState(gm.InGame);
+        // 3. Back to party selection
+        gm.SwitchState(gm.PartySelect);
     }
 
     public override void ExitState(GameManager gm)  { }

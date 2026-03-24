@@ -10,10 +10,7 @@ public class KnightAI : BehaviorTreeRunner
 
     [Header("Detection")]
     [SerializeField] private float enemyDetectionRange = 10f;
-
-    [Header("Movement")]
-    [Tooltip("How close to get before attempting to attack.")]
-    [SerializeField] private float approachDistance = 1f;
+    // Approach distance is now driven by the equipped weapon's range (WeaponSO.range → DamageComponent.AttackRange).
 
     protected override void Start()
     {
@@ -35,7 +32,7 @@ public class KnightAI : BehaviorTreeRunner
         // Priority 1: ATTACK
         var attackSeq = new Sequence(bb);
         attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange));
-        attackSeq.AddChild(new MoveAndAttack(bb, approachDistance, enemyLayer));
+        attackSeq.AddChild(new MoveAndAttack(bb, enemyLayer));
         root.AddChild(attackSeq);
 
 		// Priority 2: LOOT CHESTS
@@ -53,7 +50,7 @@ public class KnightAI : BehaviorTreeRunner
 		var worldItemSeq = new Sequence(bb);
 		worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
 		worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 8f));
-		worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
+		worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));
 		worldItemSeq.AddChild(new PickupItem(bb));
 		root.AddChild(worldItemSeq);
 
@@ -73,8 +70,5 @@ public class KnightAI : BehaviorTreeRunner
 
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, enemyDetectionRange);
-
-        Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, approachDistance);
     }
 }

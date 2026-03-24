@@ -29,7 +29,7 @@ public class EvaluateNearbyItems : Node
 		if (bestItem == null)
 			return NodeState.Failure;
 
-		bb.Set("target", bestItem.transform);
+		bb.Set("itemTarget", bestItem.transform);
 		bb.Set("targetWorldItem", bestItem);
 		Debug.Log($"[EvaluateNearbyItems] {self.name} targeting {bestItem.item?.itemName} " +
 		          $"(score: {bestItem.item?.GetScore():F1})");

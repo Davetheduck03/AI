@@ -15,7 +15,7 @@ MonoBehaviour:
   ID: 14
   itemName: Iron LongSword
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: afdb0f9fa1ec16c4dac0fff2b1821aa4, type: 3}
   weaponType: 1
-  damageBonus: 35
+  damageBonus: 15
   attackSpeedBonus: 0

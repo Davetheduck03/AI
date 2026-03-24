@@ -9,8 +9,8 @@ public class BasicEnemyAI : BehaviorTreeRunner
     [SerializeField] private LayerMask playerLayer;
     [SerializeField] private LayerMask visionBlockingLayers;
 
-    [Header("Movement")]
-    [SerializeField] private float approachDistance = 1.5f;
+    // Approach distance is driven by EnemySO.range → DamageComponent.AttackRange.
+    // Set the range value on the EnemySO asset to control how close enemies get.
 
     protected override Node BuildTree()
     {
@@ -19,7 +19,7 @@ public class BasicEnemyAI : BehaviorTreeRunner
         // Priority 1: Chase and attack player
         var chaseSeq = new Sequence(bb);
         chaseSeq.AddChild(new FindPlayer(bb, 15f, visionBlockingLayers));
-        chaseSeq.AddChild(new MoveAndAttack(bb, approachDistance, playerLayer));
+        chaseSeq.AddChild(new MoveAndAttack(bb, playerLayer));
         root.AddChild(chaseSeq);
 
         // Priority 2: Patrol

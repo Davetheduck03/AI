@@ -15,7 +15,8 @@ MonoBehaviour:
   ID: 19
   itemName: Wooden Bow
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: 37cfd4e1f75d02d46b495149ec8fbb09, type: 3}
   weaponType: 4
   damageBonus: 5
-  attackSpeedBonus: 0.2
+  attackSpeedBonus: 0.15
+  range: 4.5

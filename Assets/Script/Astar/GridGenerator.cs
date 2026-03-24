@@ -28,12 +28,8 @@ public class GridGenerator : MonoBehaviour
         Instance = this;
     }
 
-    private void Start()
-    {
-        GenerateGrid();
-        LinkNeighbors();
-        StartCoroutine(WaitTillEndOfFrame());
-    }
+    // Grid is built by RegenerateGrid() after the dungeon tiles are painted,
+    // not at startup — there are no tiles to grid until Confirm() runs.
 
     public void GenerateGrid()
     {

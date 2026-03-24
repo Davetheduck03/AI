@@ -15,7 +15,7 @@ MonoBehaviour:
   ID: 9
   itemName: Wooden Sword
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: 4957a746736fe0c498a59358c3926d37, type: 3}
   weaponType: 0
-  damageBonus: 25
+  damageBonus: 26
   attackSpeedBonus: 0.35

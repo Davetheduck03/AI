@@ -29,6 +29,10 @@ public class HeroEquipmentUI : MonoBehaviour
     [SerializeField] private Image bodyIcon;
     [SerializeField] private TextMeshProUGUI bodyName;
 
+    [Header("Relic Slot")]
+    [SerializeField] private Image relicIcon;
+    [SerializeField] private TextMeshProUGUI relicName;
+
     [Header("Empty Slot")]
     [Tooltip("Sprite shown when a slot has no item equipped.")]
     [SerializeField] private Sprite emptySlotSprite;
@@ -37,6 +41,7 @@ public class HeroEquipmentUI : MonoBehaviour
     private ItemSO _lastWeapon;
     private ItemSO _lastHead;
     private ItemSO _lastBody;
+    private ItemSO _lastRelic;
 
     private void Start()
     {
@@ -76,6 +81,12 @@ public class HeroEquipmentUI : MonoBehaviour
             _lastBody = heroEquipment.equippedBody;
             RefreshSlot(bodyIcon, bodyName, _lastBody);
         }
+
+        if (heroEquipment.equippedRelic != _lastRelic)
+        {
+            _lastRelic = heroEquipment.equippedRelic;
+            RefreshSlot(relicIcon, relicName, _lastRelic);
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -89,10 +100,12 @@ public class HeroEquipmentUI : MonoBehaviour
         _lastWeapon = heroEquipment.equippedWeapon;
         _lastHead   = heroEquipment.equippedHead;
         _lastBody   = heroEquipment.equippedBody;
+        _lastRelic  = heroEquipment.equippedRelic;
 
         RefreshSlot(weaponIcon, weaponName, _lastWeapon);
         RefreshSlot(headIcon,   headName,   _lastHead);
         RefreshSlot(bodyIcon,   bodyName,   _lastBody);
+        RefreshSlot(relicIcon,  relicName,  _lastRelic);
     }
 
     private void RefreshSlot(Image iconImage, TextMeshProUGUI nameLabel, ItemSO item)

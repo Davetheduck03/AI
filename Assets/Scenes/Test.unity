@@ -682,11 +682,11 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1782055444536810479, guid: eb1d6c9f3980c6a47a249b8fc76684b9, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 33.0745
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 1782055444536810479, guid: eb1d6c9f3980c6a47a249b8fc76684b9, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 23.20577
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 1782055444536810479, guid: eb1d6c9f3980c6a47a249b8fc76684b9, type: 3}
       propertyPath: m_LocalPosition.z
@@ -908,14 +908,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
-    - target: {fileID: 742593927737155802, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
-      propertyPath: chestsPerMap
-      value: 12
-      objectReference: {fileID: 0}
-    - target: {fileID: 742593927737155802, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
-      propertyPath: maxEnemiesPerRoom
-      value: 2
-      objectReference: {fileID: 0}
     - target: {fileID: 3786735546994157275, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       propertyPath: m_Name
       value: ManagerContainer
@@ -924,10 +916,6 @@ PrefabInstance:
       propertyPath: walkableTilemap
       value: 
       objectReference: {fileID: 452870009}
-    - target: {fileID: 5039918461335439402, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
-      propertyPath: maxRoomSize
-      value: 10
-      objectReference: {fileID: 0}
     - target: {fileID: 5039918461335439402, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       propertyPath: wallTilemap
       value: 

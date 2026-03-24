@@ -13,9 +13,9 @@ MonoBehaviour:
   m_Name: Bandlewood Staff
   m_EditorClassIdentifier: 
   ID: 10
-  itemName: 
+  itemName: Bandlewood Staff
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: 1456bed6ed21e15449e4f1b6f864d180, type: 3}
   weaponType: 2
   damageBonus: 5
   attackSpeedBonus: 0.2

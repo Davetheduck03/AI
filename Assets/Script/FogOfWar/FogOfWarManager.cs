@@ -68,7 +68,9 @@ public class FogOfWarManager : MonoBehaviour
             {
                 allTilePositions.Add(pos);
                 wallTilePositions.Add(pos);
-                PlaceFogTile(pos);
+                // Track wall positions for the reveal system but don't place a
+                // visual fog tile on top of them — walls are always visible.
+                revealedTiles[pos] = false;
             }
         }
 

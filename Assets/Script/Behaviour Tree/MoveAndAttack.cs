@@ -8,7 +8,6 @@ using UnityEngine;
 public class MoveAndAttack : Node
 {
     private LayerMask targetLayer;
-    private float approachDistance;
     private float lastAttackTime = 0f;
     private Transform lastTarget = null;
     private bool arrived = false;
@@ -19,9 +18,13 @@ public class MoveAndAttack : Node
     private const float MovementTimeout = 4f;
     private float movementStartTime = 0f;
 
-    public MoveAndAttack(Blackboard bb, float approachDistance, LayerMask targetLayer) : base(bb)
+    /// <summary>
+    /// Approach distance is no longer a constructor parameter — it is read live from
+    /// DamageComponent.AttackRange each frame so equipping a different weapon
+    /// automatically changes how close the unit gets before attacking.
+    /// </summary>
+    public MoveAndAttack(Blackboard bb, LayerMask targetLayer) : base(bb)
     {
-        this.approachDistance = approachDistance;
         this.targetLayer = targetLayer;
     }
 
@@ -41,6 +44,10 @@ public class MoveAndAttack : Node
 
         float dist = Vector2.Distance(self.position, target.position);
 
+        // Approach distance comes from the unit's current weapon range — updates
+        // automatically when a new weapon is equipped mid-run.
+        float effectiveRange = damageComp.AttackRange;
+
         // New target — re-trigger movement
         if (target != lastTarget)
         {
@@ -52,7 +59,7 @@ public class MoveAndAttack : Node
         }
 
         // Target drifted away after arrival — re-trigger movement
-        if (arrived && dist > approachDistance * 1.2f)
+        if (arrived && dist > effectiveRange * 1.2f)
         {
             arrived = false;
             movementStartTime = Time.time;
@@ -63,7 +70,7 @@ public class MoveAndAttack : Node
         // Still moving toward target
         if (!arrived)
         {
-            if (dist <= approachDistance)
+            if (dist <= effectiveRange)
             {
                 arrived = true;
                 StopMovement(self);
@@ -109,28 +116,15 @@ public class MoveAndAttack : Node
             return NodeState.Success;
         }
 
-        // Single-target raycast
-        Vector2 direction = (targetPos2D - selfPos2D).normalized;
-        RaycastHit2D[] hits = Physics2D.RaycastAll(selfPos2D, direction, range, targetLayer);
-
-        foreach (var hit in hits)
-        {
-            if (hit.transform == self) continue;
-            if (hit.transform == target)
-            {
-                damageComp.TryDealDamage(hit.transform.gameObject);
-                lastAttackTime = Time.time;
-                Debug.Log($"[MoveAndAttack] {self.name} hit {target.name}");
-                return NodeState.Success;
-            }
-            break; // Something blocking LOS
-        }
-
-        // Raycast blocked — reposition
-        Debug.Log($"[MoveAndAttack] Attack blocked, repositioning...");
-        arrived = false;
-        TriggerMovement(self, target);
-        return NodeState.Running;
+        // Single-target attack — deal damage directly.
+        // 'arrived' already confirmed we are within AttackRange, so no raycast
+        // is needed. A raycast relying on targetLayer being set correctly in
+        // every prefab's Inspector is fragile (wrong layer → always "blocked" →
+        // archer endlessly repositions and never fires).
+        damageComp.TryDealDamage(target.gameObject);
+        lastAttackTime = Time.time;
+        Debug.Log($"[MoveAndAttack] {self.name} hit {target.name} (dist: {dist:F2})");
+        return NodeState.Success;
     }
 
     private void TriggerMovement(Transform self, Transform target)

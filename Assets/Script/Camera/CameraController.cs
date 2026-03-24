@@ -215,6 +215,10 @@ public class CameraController : MonoBehaviour
 #if UNITY_EDITOR
     private void OnGUI()
     {
+        // Only show the debug HUD once the game is actually running (not during party select).
+        if (!(GameManager.Instance?.GetCurrentState() is RoundState_InGame))
+            return;
+
         // Tiny HUD overlay in the top-left for debugging
         GUI.color = Color.black;
         string heroName = CurrentHero != null ? CurrentHero.name : "none";

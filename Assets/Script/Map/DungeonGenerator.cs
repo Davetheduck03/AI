@@ -57,10 +57,8 @@ public class DungeonGenerator : MonoBehaviour
         Instance = this;
     }
 
-    private void Start()
-    {
-        Generate();
-    }
+    // Generation is triggered by RoundState_PartySelect.Confirm() → Regenerate(),
+    // not at startup — the dungeon only needs to exist during active gameplay.
 
     // ─── Public API ────────────────────────────────────────────────────────
 

@@ -15,7 +15,7 @@ MonoBehaviour:
   ID: 13
   itemName: Copper LongSword
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: b7eaeeb8736b6274c8516a2de510d7b0, type: 3}
   weaponType: 1
-  damageBonus: 20
+  damageBonus: 8
   attackSpeedBonus: 0

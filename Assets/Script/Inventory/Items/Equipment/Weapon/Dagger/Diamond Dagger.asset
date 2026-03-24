@@ -15,7 +15,7 @@ MonoBehaviour:
   ID: 18
   itemName: Diamond Dagger
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: 95b667fb35a876744bd36f1faa06d26f, type: 3}
   weaponType: 3
-  damageBonus: 15
+  damageBonus: 26
   attackSpeedBonus: 0.65

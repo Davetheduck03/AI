@@ -13,9 +13,9 @@ MonoBehaviour:
   m_Name: Old Staff
   m_EditorClassIdentifier: 
   ID: 12
-  itemName: 
+  itemName: Old Staff
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: 0d5d65c0a5087784791b931d3c0eaa4b, type: 3}
   weaponType: 2
-  damageBonus: 15
+  damageBonus: 10
   attackSpeedBonus: 0.35

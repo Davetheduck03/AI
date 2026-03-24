@@ -15,7 +15,7 @@ MonoBehaviour:
   ID: 17
   itemName: Iron Dagger
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: 8d1f9bbebb030eb43a8735afc8da544b, type: 3}
   weaponType: 3
   damageBonus: 10
-  attackSpeedBonus: 0.4
+  attackSpeedBonus: 0.5

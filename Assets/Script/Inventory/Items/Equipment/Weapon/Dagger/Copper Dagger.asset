@@ -15,7 +15,7 @@ MonoBehaviour:
   ID: 16
   itemName: Copper Dagger
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: d510a82fe1f5de84fa20eb96f159da46, type: 3}
   weaponType: 3
   damageBonus: 5
-  attackSpeedBonus: 0.25
+  attackSpeedBonus: 0.35

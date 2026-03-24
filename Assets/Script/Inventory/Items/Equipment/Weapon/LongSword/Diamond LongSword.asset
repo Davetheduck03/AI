@@ -15,7 +15,7 @@ MonoBehaviour:
   ID: 15
   itemName: Diamond LongSword
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: 84a1e1c847431df4ba86766280e196b5, type: 3}
   weaponType: 1
-  damageBonus: 20
+  damageBonus: 35
   attackSpeedBonus: 0

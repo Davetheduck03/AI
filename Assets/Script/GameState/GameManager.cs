@@ -14,19 +14,25 @@ public class GameManager : MonoBehaviour
     [Header("RoundState")]
 
     public RoundState_Base currentState;
-    public RoundState_Start Start = new RoundState_Start();
-    public RoundState_Win Win = new RoundState_Win();
-    public RoundState_InGame InGame = new RoundState_InGame();
-    public RoundState_Lose Lose = new RoundState_Lose();
+    public RoundState_Start       StartState       = new RoundState_Start();
+    public RoundState_PartySelect PartySelect = new RoundState_PartySelect();
+    public RoundState_Win         Win         = new RoundState_Win();
+    public RoundState_InGame      InGame      = new RoundState_InGame();
+    public RoundState_Lose        Lose        = new RoundState_Lose();
 
     private void Awake()
     {
         GameManager.Instance = this;
     }
 
+    private void Start()
+    {
+        Init();
+    }
+
     public void Init()
     {
-        SwitchState(Start);
+        SwitchState(StartState);
     }
 
     public RoundState_Base GetCurrentState()

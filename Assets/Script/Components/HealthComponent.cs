@@ -65,6 +65,9 @@ public class HealthComponent : UnitComponent
 
     private void Die()
     {
+        // Drop the relic (if held) before the GameObject is destroyed so it spawns as a world item.
+        GetComponent<EquipmentComponent>()?.DropOnDeath();
+
         OnDeath?.Invoke(this);
         Destroy(gameObject);
     }

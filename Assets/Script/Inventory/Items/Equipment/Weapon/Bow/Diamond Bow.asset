@@ -15,7 +15,8 @@ MonoBehaviour:
   ID: 21
   itemName: Diamond Bow
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: 784b3e7300ca3574fadef8661b644946, type: 3}
   weaponType: 4
-  damageBonus: 25
-  attackSpeedBonus: 0.45
+  damageBonus: 26
+  attackSpeedBonus: 0.4
+  range: 4.5

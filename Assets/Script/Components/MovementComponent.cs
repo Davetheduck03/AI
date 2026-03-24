@@ -6,10 +6,24 @@ public class MovementComponent : UnitComponent
     public float movement_Speed;
     private UnitPathFollower agent;
 
+    // ── Claimed-destination registry ─────────────────────────────────────
+    // Maps a PathNode to whichever hero's Transform has claimed it as their
+    // movement destination. This prevents multiple heroes from all pathing to
+    // the exact same tile and stacking on top of each other.
+    private static readonly Dictionary<PathNode, Transform> _claimedNodes
+        = new Dictionary<PathNode, Transform>();
+
+    private PathNode _myClaimedNode = null;
+
     protected override void OnInitialize()
     {
         movement_Speed = data.Speed;
         agent = GetComponent<UnitPathFollower>();
+    }
+
+    private void OnDisable()
+    {
+        ReleaseClaim();
     }
 
     public void OnTriggerMove(Transform self, Transform target)
@@ -46,6 +60,10 @@ public class MovementComponent : UnitComponent
             return;
         }
 
+        // Claim a destination tile so heroes spread to adjacent tiles instead of
+        // all converging on the exact same node.
+        goal = ClaimGoal(goal, self);
+
         Debug.Log($"Pathfinding: {start.name} → {goal.name}");
 
         Astar.Instance.FindPath(start, goal, (path) =>
@@ -55,5 +73,53 @@ public class MovementComponent : UnitComponent
             else
                 Debug.LogWarning("No valid path found between nodes!");
         });
+    }
+
+    // ── Claim helpers ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Claims <paramref name="preferred"/> for <paramref name="self"/>.
+    /// If another hero already claimed that tile, walks the node's neighbours
+    /// to find a free adjacent tile. Falls back to the original if all are taken.
+    /// </summary>
+    private PathNode ClaimGoal(PathNode preferred, Transform self)
+    {
+        ReleaseClaim();
+
+        // Try the preferred node first
+        if (!_claimedNodes.TryGetValue(preferred, out var owner) || owner == self)
+        {
+            _claimedNodes[preferred] = self;
+            _myClaimedNode = preferred;
+            return preferred;
+        }
+
+        // Preferred already claimed by someone else — find a free neighbour
+        foreach (PathNode nb in preferred.neighbors)
+        {
+            if (nb == null || !nb.isWalkable) continue;
+            if (!_claimedNodes.TryGetValue(nb, out owner) || owner == self)
+            {
+                _claimedNodes[nb] = self;
+                _myClaimedNode = nb;
+                return nb;
+            }
+        }
+
+        // All neighbours also claimed — fall back to the preferred tile anyway
+        _claimedNodes[preferred] = self;
+        _myClaimedNode = preferred;
+        return preferred;
+    }
+
+    private void ReleaseClaim()
+    {
+        if (_myClaimedNode != null
+            && _claimedNodes.TryGetValue(_myClaimedNode, out var owner)
+            && owner == transform)
+        {
+            _claimedNodes.Remove(_myClaimedNode);
+        }
+        _myClaimedNode = null;
     }
 }

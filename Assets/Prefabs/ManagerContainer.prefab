@@ -126,6 +126,7 @@ Transform:
   - {fileID: 6708728257904144327}
   - {fileID: 8948001221246311175}
   - {fileID: 5062097220739150595}
+  - {fileID: 1579703830660291904}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &4531527605268387192
@@ -175,13 +176,12 @@ MonoBehaviour:
   enemyPrefabs:
   - {fileID: 3417378983756933604, guid: ad78423dcf8f5d34a811914bceaa24c8, type: 3}
   chestPrefab: {fileID: 7046847203900251548, guid: 308d0d7e34b960a4e931314ce99128fb, type: 3}
-  heroPrefab: {fileID: 3413861132331393377, guid: 2dbed49558b38aa41ba72b9b31e9be04, type: 3}
   worldItemPrefab: {fileID: 3079422274475899644, guid: 4c61aa658c31018459be686ffd0745a2, type: 3}
   defaultLootTable: {fileID: 11400000, guid: 24302976173991d4aac556d1984e4a3c, type: 2}
   relicItem: {fileID: 11400000, guid: 2ed1902283af1b4489092de4395628b3, type: 2}
-  chestsPerMap: 8
+  chestsPerMap: 12
   minEnemiesPerRoom: 1
-  maxEnemiesPerRoom: 3
+  maxEnemiesPerRoom: 2
 --- !u!1 &5525159536406985445
 GameObject:
   m_ObjectHideFlags: 0
@@ -233,7 +233,7 @@ MonoBehaviour:
   mapWidth: 60
   mapHeight: 60
   minRoomSize: 6
-  maxRoomSize: 14
+  maxRoomSize: 10
   bspDepth: 4
 --- !u!1 &8385566539735300679
 GameObject:
@@ -287,6 +287,68 @@ MonoBehaviour:
   wallRevealDistance: 1.5
   explorationSpacing: 8
   maxFailedSearches: 3
+--- !u!1 &8568905538706031604
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1579703830660291904}
+  - component: {fileID: 895993483253627849}
+  - component: {fileID: 2206654839439043820}
+  m_Layer: 0
+  m_Name: PartySetUp
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1579703830660291904
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8568905538706031604}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6804936935867078887}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &895993483253627849
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8568905538706031604}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 49a35c8cb7cd2a446baccb0e836ab08d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  availableClasses:
+  - classSO: {fileID: 11400000, guid: 1199131efb6ab3b489e930c9e6c9fe52, type: 2}
+    prefab: {fileID: 3413861132331393377, guid: e47a2f21af642eb4f8fc02dd451afc70, type: 3}
+  - classSO: {fileID: 11400000, guid: 3adf7eba5c2ef2e46bd0f1ce7f0db79d, type: 2}
+    prefab: {fileID: 3413861132331393377, guid: 2dbed49558b38aa41ba72b9b31e9be04, type: 3}
+--- !u!114 &2206654839439043820
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8568905538706031604}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 356f7f43225b16149b3de7ec99920cb3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1001 &4473071688084913017
 PrefabInstance:
   m_ObjectHideFlags: 0

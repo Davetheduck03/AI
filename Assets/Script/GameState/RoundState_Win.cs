@@ -16,8 +16,8 @@ public class RoundState_Win : RoundState_Base
     {
         Debug.Log("[RoundState_Win] Hero extracted with the Relic — generating next floor.");
 
-        // 1. Destroy enemies, chests, and world items; keep the hero alive.
-        DungeonSpawner.Instance?.CleanupExceptHero();
+        // 1. Destroy enemies, chests, and world items; keep all surviving heroes alive.
+        DungeonSpawner.Instance?.CleanupExceptHeroes();
 
         // 2. Paint a fresh dungeon onto the tilemaps.
         DungeonGenerator.Instance?.Regenerate();

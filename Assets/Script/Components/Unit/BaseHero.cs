@@ -24,7 +24,8 @@ public class BaseHero : BaseUnit
         // Only react to our own death
         if (who.gameObject != gameObject) return;
 
-        if (GameManager.Instance != null)
-            GameManager.Instance.SwitchState(GameManager.Instance.Lose);
+        // Notify the spawner — it tracks the living count and only triggers
+        // Lose when the last hero dies, allowing the others to keep fighting.
+        DungeonSpawner.Instance?.OnHeroDied(this);
     }
 }

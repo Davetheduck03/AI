@@ -19,6 +19,9 @@ public class WeaponSO : ItemSO
     public float damageBonus;
     public float attackSpeedBonus;  // Added to unit's baseAttackSpeed
 
+    [Tooltip("Attack range for this weapon. 0 = use the hero's base range from HeroSO.")]
+    public float range;
+
     public override float GetScore()
     {
         return damageBonus + (attackSpeedBonus * 0.5f);

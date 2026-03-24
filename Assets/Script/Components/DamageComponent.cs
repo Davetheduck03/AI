@@ -18,6 +18,7 @@ public class DamageComponent : UnitComponent
     public float AttackCooldown => 1f / TotalAttackSpeed;
 
     // ── Range & AoE ───────────────────────────────
+    private float baseRange;
     public float AttackRange { get; private set; }
     public bool IsAoE { get; private set; }
 
@@ -29,11 +30,13 @@ public class DamageComponent : UnitComponent
         // Range and AoE only exist on HeroSO — enemies fall back to defaults
         if (data is HeroSO heroData)
         {
+            baseRange   = heroData.range;
             AttackRange = heroData.range;
-            IsAoE = heroData.isAoE;
+            IsAoE       = heroData.isAoE;
         }
         else if (data is EnemySO enemyData)
         {
+            baseRange   = enemyData.range;
             AttackRange = enemyData.range;
         }
 
@@ -57,6 +60,17 @@ public class DamageComponent : UnitComponent
         Debug.Log($"[DamageComponent] {gameObject.name} attack speed: " +
                   $"{baseAttackSpeed} base + {attackSpeedBonus} bonus = {TotalAttackSpeed}/s " +
                   $"(cooldown: {AttackCooldown:F2}s)");
+    }
+
+    /// <summary>
+    /// Called by EquipmentComponent when a weapon is equipped or unequipped.
+    /// Pass the weapon's range to override; pass 0 to fall back to the hero's base range.
+    /// </summary>
+    public void SetWeaponRange(float weaponRange)
+    {
+        AttackRange = weaponRange > 0f ? weaponRange : baseRange;
+        Debug.Log($"[DamageComponent] {gameObject.name} attack range → {AttackRange:F2} " +
+                  $"({(weaponRange > 0f ? "weapon override" : "hero base")})");
     }
 
     // ── Deal damage ───────────────────────────────

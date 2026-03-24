@@ -72,5 +72,6 @@ public class PickupItem : Node
     {
         bb.Set<WorldItem>("targetWorldItem", null);
         bb.Set<Transform>("target", null);
+        bb.Set<Transform>("itemTarget", null);
     }
 }

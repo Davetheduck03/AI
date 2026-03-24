@@ -14,4 +14,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   className: Knight
   classIcon: {fileID: 0}
+  startingWeapon: {fileID: 11400000, guid: 9933ea38422d6fe41948c891d58c3276, type: 2}
   allowedWeaponTypes: 00000000030000000100000004000000

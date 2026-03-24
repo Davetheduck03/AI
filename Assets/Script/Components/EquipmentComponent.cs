@@ -5,6 +5,7 @@ public class EquipmentComponent : UnitComponent
 	public WeaponSO equippedWeapon { get; private set; }
 	public HeadArmorSO equippedHead { get; private set; }
 	public BodyArmorSO equippedBody { get; private set; }
+	public RelicSO equippedRelic { get; private set; }
 
 	private HealthComponent healthComp;
 	private DamageComponent damageComp;
@@ -31,6 +32,19 @@ public class EquipmentComponent : UnitComponent
 				                 "This hero will be able to equip any weapon type.");
 			else
 				Debug.Log($"[EquipmentComponent] {gameObject.name} initialized as {adventurerClass.className}");
+		}
+	}
+
+	/// <summary>
+	/// Equips the class's starting weapon after all Awake/OnInitialize calls have
+	/// completed, so DamageComponent is fully set up before SetWeaponRange is called.
+	/// </summary>
+	private void Start()
+	{
+		if (adventurerClass?.startingWeapon != null)
+		{
+			ForceEquipWeapon(adventurerClass.startingWeapon);
+			Debug.Log($"[Equipment] {gameObject.name} starts with {adventurerClass.startingWeapon.itemName}");
 		}
 	}
 
@@ -174,15 +188,17 @@ public class EquipmentComponent : UnitComponent
 			damageComp?.AddAttackSpeedBonus(-appliedWeaponAttackSpeed);
 		}
 
-		equippedWeapon         = newWeapon;
-		appliedWeaponDamage    = newWeapon.damageBonus;
+		equippedWeapon           = newWeapon;
+		appliedWeaponDamage      = newWeapon.damageBonus;
 		appliedWeaponAttackSpeed = newWeapon.attackSpeedBonus;
 
 		damageComp?.AddDamageBonus(appliedWeaponDamage);
 		damageComp?.AddAttackSpeedBonus(appliedWeaponAttackSpeed);
+		damageComp?.SetWeaponRange(newWeapon.range);   // 0 = hero base range, >0 = weapon override
 
 		Debug.Log($"[Equipment] {gameObject.name} equipped {newWeapon.itemName} → " +
-				  $"Total: {damageComp?.TotalDamage} dmg, {damageComp?.TotalAttackSpeed}/s");
+				  $"Total: {damageComp?.TotalDamage} dmg, {damageComp?.TotalAttackSpeed}/s, " +
+				  $"Range: {damageComp?.AttackRange}");
 	}
 
 	private void ForceEquipHead(HeadArmorSO newHead)
@@ -241,11 +257,64 @@ public class EquipmentComponent : UnitComponent
 		return true;
 	}
 
+	// ─────────────────────────────────────────────
+	// RELIC SLOT
+	// ─────────────────────────────────────────────
+
+	/// <summary>
+	/// Called by RelicHolder when the hero picks up the relic world item.
+	/// Stores the reference so it can be dropped on death.
+	/// </summary>
+	public void ForceEquipRelic(RelicSO relic)
+	{
+		equippedRelic = relic;
+		Debug.Log($"[Equipment] {gameObject.name} is now carrying the relic: {relic?.itemName}");
+	}
+
+	/// <summary>
+	/// Clears the relic slot without dropping it — called at the end of a successful floor
+	/// so the hero starts the next floor without the relic in their inventory or UI.
+	/// </summary>
+	public void ClearRelic()
+	{
+		equippedRelic = null;
+		Debug.Log($"[Equipment] {gameObject.name} relic slot cleared.");
+	}
+
+	/// <summary>
+	/// Called by HealthComponent just before the hero is destroyed.
+	/// Drops the relic as a world item so another hero can pick it up.
+	/// </summary>
+	public void DropOnDeath()
+	{
+		if (equippedRelic == null) return;
+
+		if (worldItemPrefab == null)
+		{
+			Debug.LogWarning($"[Equipment] {gameObject.name} died with the relic but " +
+			                 "worldItemPrefab is not assigned — relic lost!");
+			return;
+		}
+
+		Vector3 scatter = new Vector3(Random.Range(0.3f, 0.6f), 0, 0);
+		scatter = Quaternion.Euler(0, 0, Random.Range(0f, 360f)) * scatter;
+		Vector3 spawnPos = transform.position + scatter;
+
+		GameObject dropped = Instantiate(worldItemPrefab, spawnPos, Quaternion.identity);
+		WorldItem worldItem = dropped.GetComponent<WorldItem>();
+		if (worldItem != null)
+			worldItem.item = equippedRelic;
+
+		Debug.Log($"[Equipment] {gameObject.name} died — dropped relic '{equippedRelic.itemName}' at {spawnPos}");
+		equippedRelic = null;
+	}
+
 	public void LogLoadout()
 	{
 		Debug.Log($"[{gameObject.name} Loadout] " +
 				  $"Weapon: {(equippedWeapon != null ? equippedWeapon.itemName : "none")} | " +
 				  $"Head: {(equippedHead   != null ? equippedHead.itemName   : "none")} | " +
-				  $"Body: {(equippedBody   != null ? equippedBody.itemName   : "none")}");
+				  $"Body: {(equippedBody   != null ? equippedBody.itemName   : "none")} | " +
+				  $"Relic: {(equippedRelic  != null ? equippedRelic.itemName  : "none")}");
 	}
 }

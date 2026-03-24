@@ -12,4 +12,5 @@ public class Blackboard
         return default;
     }
     public bool Has(string key) => data.ContainsKey(key);
+    public void Remove(string key) => data.Remove(key);
 }

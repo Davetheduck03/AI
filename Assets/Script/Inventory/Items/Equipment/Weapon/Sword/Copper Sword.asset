@@ -15,7 +15,7 @@ MonoBehaviour:
   ID: 7
   itemName: Copper Sword
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: afd0a31416f05a243b39c0481ba58af1, type: 3}
   weaponType: 0
-  damageBonus: 10
+  damageBonus: 5
   attackSpeedBonus: 0.1

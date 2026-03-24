@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f16f84f20a565648872660ccbc068bd, type: 3}
   m_Name: Relic
   m_EditorClassIdentifier: 
-  ID: 0
-  itemName: 
+  ID: 22
+  itemName: Relic
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 567716330, guid: 37b22f969863d174b9fcedb4925a775e, type: 3}

@@ -7,6 +7,7 @@ using UnityEngine;
 public class MoveTowardsTarget : Node
 {
     private float approachRange = 1f;
+    private string targetKey = "target";
     private Transform lastTarget = null;
     private Vector3? actualDestination = null;
 
@@ -18,15 +19,16 @@ public class MoveTowardsTarget : Node
     private float nextStuckCheckTime = 0f;
     private Vector3 lastCheckedPosition = Vector3.zero;
 
-    public MoveTowardsTarget(Blackboard bb, float range = 3f) : base(bb)
+    public MoveTowardsTarget(Blackboard bb, float range = 3f, string targetKey = "target") : base(bb)
     {
         this.approachRange = range;
+        this.targetKey = targetKey;
     }
 
     public override NodeState Evaluate()
     {
         Transform self = bb.Get<Transform>("self");
-        Transform target = bb.Get<Transform>("target");
+        Transform target = bb.Get<Transform>(targetKey);
 
         if (self == null || target == null)
         {

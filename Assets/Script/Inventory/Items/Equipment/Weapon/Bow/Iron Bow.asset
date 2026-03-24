@@ -15,7 +15,8 @@ MonoBehaviour:
   ID: 20
   itemName: Iron Bow
   Description: 
-  Icon: {fileID: 0}
+  Icon: {fileID: 21300000, guid: 3114b8df257634340b25f878687b0e5b, type: 3}
   weaponType: 4
-  damageBonus: 15
-  attackSpeedBonus: 0.3
+  damageBonus: 10
+  attackSpeedBonus: 0.25
+  range: 4.5
