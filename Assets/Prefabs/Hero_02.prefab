@@ -443,6 +443,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 0
   enemyDetectionRange: 14
+  kiteDistance: 3.5
 --- !u!1 &3429566246558842030
 GameObject:
   m_ObjectHideFlags: 0

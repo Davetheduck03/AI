@@ -2,250 +2,222 @@
 using UnityEngine;
 
 /// <summary>
-/// Kiting combat node for ranged units (archers).
+/// Kiting combat node for ranged units.
 ///
-/// State machine:
-///   RETREATING  — enemy is inside <kiteDistance>; back away while still attacking.
-///   STRAFING    — enemy is between <kiteDistance> and <attackRange>; hold position
-///                 and fire.  Periodically side-step to break AI prediction.
-///   CLOSING     — enemy is beyond <attackRange>; close until within range.
+/// States:
+///   CLOSING    — enemy beyond attackRange; move toward them.
+///   STRAFING   — enemy in the sweet-spot band; hold and shoot, side-step periodically.
+///   RETREATING — enemy inside kiteDistance; back away while still firing.
 ///
-/// Movement is handled by calling MovementComponent.OnTriggerMove with a
-/// dynamically placed temporary target, exactly like the rest of the BT system.
-/// The node returns Running while combat is ongoing and Success after each
-/// successful hit (so the BT can re-evaluate priorities).
-/// Returns Failure if the target is lost or we time out trying to reach it.
+/// IMPORTANT: the enemy Transform is stored in a private field (_enemy), NOT in
+/// bb["target"].  Writing the kite movement target into bb["target"] was the
+/// original bug that caused the node to lose track of the enemy every frame.
 /// </summary>
 public class KiteAndAttack : Node
 {
-    // ── Tuning ───────────────────────────────────────────────────────────────
+	// ── Tuning ───────────────────────────────────────────────────────────────
 
-    /// <summary>Preferred distance to maintain from the enemy.</summary>
-    private readonly float kiteDistance;
+	private readonly float kiteDistance;
 
-    /// <summary>
-    /// How far inside kiteDistance the enemy must be before we start retreating.
-    /// Small deadzone prevents jittery back-and-forth.
-    /// </summary>
-    private const float RetreaTriggerMargin = 0.3f;
+	private const float RetreatTriggerMargin = 0.3f;   // deadzone inside kiteDistance
+	private const float CloseInMargin = 0.5f;   // deadzone outside attackRange
+	private const float StrafeInterval = 1.8f;   // seconds between side-steps
+	private const float StrafeDistance = 2.5f;   // world units per side-step
+	private const float StuckDistanceThreshold = 0.25f;
+	private const float MovementCheckInterval = 2.0f;
 
-    /// <summary>How far outside attackRange before we start closing in.</summary>
-    private const float CloseInMargin = 0.5f;
+	// How often to re-trigger movement while closing/retreating (seconds).
+	// Calling OnTriggerMove every frame would spam A* — throttle it.
+	private const float MoveRetriggerInterval = 0.5f;
 
-    /// <summary>Seconds between strafe direction changes.</summary>
-    private const float StrafeInterval = 1.8f;
+	// ── State ─────────────────────────────────────────────────────────────────
 
-    /// <summary>How far to the side to strafe each interval (world units).</summary>
-    private const float StrafeDistance = 2.5f;
+	private enum CombatState { Closing, Strafing, Retreating }
+	private CombatState _state = CombatState.Closing;
 
-    /// <summary>
-    /// If the unit hasn't moved this far within MovementCheckInterval seconds,
-    /// the retreat target is unreachable (wall behind us) — stop trying.
-    /// </summary>
-    private const float StuckDistanceThreshold = 0.25f;
-    private const float MovementCheckInterval  = 2.0f;
+	private readonly LayerMask _targetLayer;
+	private float _lastAttackTime = 0f;
+	private float _nextStrafeTime = 0f;
+	private float _nextMoveRetrigger = 0f;
+	private int _strafeDirection = 1;
 
-    // ── State ─────────────────────────────────────────────────────────────────
+	// Enemy is stored here — NOT in the blackboard — so movement target
+	// writes can't accidentally overwrite it.
+	private Transform _enemy = null;
 
-    private enum CombatState { Closing, Strafing, Retreating }
-    private CombatState _state = CombatState.Closing;
+	// Reusable GO for movement targets (avoid per-frame allocation).
+	private GameObject _moveTargetGO = null;
 
-    private readonly LayerMask _targetLayer;
-    private float _lastAttackTime  = 0f;
-    private float _nextStrafeTime  = 0f;
-    private int   _strafeDirection = 1;   // +1 or -1
+	// Stuck detection for retreat
+	private Vector3 _lastCheckedPos = Vector3.zero;
+	private float _nextStuckCheckAt = 0f;
 
-    // Movement target reuse
-    private Transform _lastEnemy     = null;
-    private GameObject _moveTargetGO = null;
+	// ── Constructor ───────────────────────────────────────────────────────────
 
-    // Stuck detection
-    private Vector3 _lastCheckedPos   = Vector3.zero;
-    private float   _nextStuckCheckAt = 0f;
+	public KiteAndAttack(Blackboard bb, LayerMask targetLayer, float kiteDistance = 3.5f)
+		: base(bb)
+	{
+		this.kiteDistance = kiteDistance;
+		_targetLayer = targetLayer;
+	}
 
-    // ── Constructor ───────────────────────────────────────────────────────────
+	// ── Evaluate ──────────────────────────────────────────────────────────────
 
-    /// <param name="kiteDistance">Desired distance to keep from the enemy.</param>
-    public KiteAndAttack(Blackboard bb, LayerMask targetLayer, float kiteDistance = 3.5f)
-        : base(bb)
-    {
-        this.kiteDistance = kiteDistance;
-        _targetLayer      = targetLayer;
-    }
+	public override NodeState Evaluate()
+	{
+		Transform self = bb.Get<Transform>("self");
 
-    // ── Evaluate ──────────────────────────────────────────────────────────────
+		// Read the enemy from the blackboard ONLY on the first call or when
+		// the blackboard has a fresh enemy (set by FindNearestRevealedEnemy).
+		Transform bbEnemy = bb.Get<Transform>("target");
+		if (bbEnemy != null && bbEnemy != _moveTargetGO?.transform)
+			_enemy = bbEnemy;   // real enemy — accept it
 
-    public override NodeState Evaluate()
-    {
-        Transform self   = bb.Get<Transform>("self");
-        Transform target = bb.Get<Transform>("target");
+		if (self == null || _enemy == null || _enemy.gameObject == null)
+		{
+			Cleanup(self);
+			return NodeState.Failure;
+		}
 
-        if (self == null || target == null || target.gameObject == null)
-        {
-            Cleanup(self);
-            return NodeState.Failure;
-        }
+		if (!self.TryGetComponent<DamageComponent>(out var damageComp))
+			return NodeState.Failure;
 
-        if (!self.TryGetComponent<DamageComponent>(out var damageComp))
-            return NodeState.Failure;
+		float effectiveAttackRange = damageComp.AttackRange;
+		float effectiveKiteRange = Mathf.Min(kiteDistance, effectiveAttackRange - 0.3f);
+		float dist = Vector2.Distance(self.position, _enemy.position);
 
-        // Snap kite distance to weapon range - 0.5 so we are always within attack range.
-        float effectiveAttackRange = damageComp.AttackRange;
-        float effectiveKiteRange   = Mathf.Min(kiteDistance, effectiveAttackRange - 0.3f);
+		// ── State transition ──────────────────────────────────────────────────
+		CombatState newState;
+		if (dist < effectiveKiteRange - RetreatTriggerMargin)
+			newState = CombatState.Retreating;
+		else if (dist > effectiveAttackRange + CloseInMargin)
+			newState = CombatState.Closing;
+		else
+			newState = CombatState.Strafing;
 
-        float dist = Vector2.Distance(self.position, target.position);
+		if (newState != _state)
+		{
+			_state = newState;
+			_nextMoveRetrigger = 0f;   // force immediate move on state change
+			if (_state == CombatState.Retreating)
+			{
+				_lastCheckedPos = self.position;
+				_nextStuckCheckAt = Time.time + MovementCheckInterval;
+			}
+		}
 
-        // ── New target → reset ────────────────────────────────────────────────
-        if (target != _lastEnemy)
-        {
-            _lastEnemy        = target;
-            _state            = CombatState.Closing;
-            _nextStrafeTime   = Time.time + StrafeInterval;
-            _lastCheckedPos   = self.position;
-            _nextStuckCheckAt = Time.time + MovementCheckInterval;
-        }
+		// ── Movement ──────────────────────────────────────────────────────────
+		switch (_state)
+		{
+			case CombatState.Closing:
+				if (Time.time >= _nextMoveRetrigger)
+				{
+					TriggerMove(self, _enemy.position);
+					_nextMoveRetrigger = Time.time + MoveRetriggerInterval;
+				}
+				break;
 
-        // ── Determine state ───────────────────────────────────────────────────
-        if (dist < effectiveKiteRange - RetreaTriggerMargin)
-        {
-            _state = CombatState.Retreating;
-        }
-        else if (dist > effectiveAttackRange + CloseInMargin)
-        {
-            _state = CombatState.Closing;
-        }
-        else
-        {
-            // In the sweet-spot band between kiteRange and attackRange
-            _state = CombatState.Strafing;
-        }
+			case CombatState.Retreating:
+				if (!TryRetreat(self))
+					StopMovement(self);
+				break;
 
-        // ── Act on state ──────────────────────────────────────────────────────
-        switch (_state)
-        {
-            case CombatState.Closing:
-                MoveTowards(self, target.position);
-                break;
+			case CombatState.Strafing:
+				TryStrafe(self);
+				break;
+		}
 
-            case CombatState.Retreating:
-                if (!TryRetreat(self, target))
-                    // Nowhere to run — just hold and shoot
-                    StopMovement(self);
-                break;
+		// ── Attack ────────────────────────────────────────────────────────────
+		if (dist <= effectiveAttackRange &&
+			Time.time - _lastAttackTime >= damageComp.AttackCooldown)
+		{
+			damageComp.TryDealDamage(_enemy.gameObject);
+			_lastAttackTime = Time.time;
+			Debug.Log($"[KiteAndAttack] {self.name} hit {_enemy.name} " +
+					  $"dist={dist:F2} state={_state}");
+			return NodeState.Success;
+		}
 
-            case CombatState.Strafing:
-                TryStrafe(self, target);
-                break;
-        }
+		return NodeState.Running;
+	}
 
-        // ── Attack whenever in range and off cooldown ─────────────────────────
-        bool inRange = dist <= effectiveAttackRange;
-        if (inRange && Time.time - _lastAttackTime >= damageComp.AttackCooldown)
-        {
-            damageComp.TryDealDamage(target.gameObject);
-            _lastAttackTime = Time.time;
-            Debug.Log($"[KiteAndAttack] {self.name} shot {target.name} from {dist:F2} " +
-                      $"(state: {_state})");
-            return NodeState.Success;
-        }
+	// ── Movement helpers ──────────────────────────────────────────────────────
 
-        return NodeState.Running;
-    }
+	private bool TryRetreat(Transform self)
+	{
+		// Stuck check
+		if (Time.time >= _nextStuckCheckAt)
+		{
+			float moved = Vector3.Distance(self.position, _lastCheckedPos);
+			_lastCheckedPos = self.position;
+			_nextStuckCheckAt = Time.time + MovementCheckInterval;
 
-    // ── Movement helpers ──────────────────────────────────────────────────────
+			if (moved < StuckDistanceThreshold)
+			{
+				Debug.Log($"[KiteAndAttack] {self.name} stuck retreating — holding.");
+				return false;
+			}
+		}
 
-    /// <summary>Move directly toward a world position.</summary>
-    private void MoveTowards(Transform self, Vector3 worldPos)
-    {
-        SetMoveTarget(self, worldPos);
-    }
+		if (Time.time < _nextMoveRetrigger) return true;   // already moving
 
-    /// <summary>
-    /// Place a retreat target behind us (away from enemy).
-    /// Returns false if we detect we're stuck (wall behind us).
-    /// </summary>
-    private bool TryRetreat(Transform self, Transform enemy)
-    {
-        Vector3 awayDir = (self.position - enemy.position).normalized;
+		Vector3 awayDir = (self.position - _enemy.position).normalized;
+		float stepBack = Mathf.Max(kiteDistance - Vector2.Distance(self.position, _enemy.position)
+									 + RetreatTriggerMargin + 1.0f, 1.5f);
+		TriggerMove(self, self.position + awayDir * stepBack);
+		_nextMoveRetrigger = Time.time + MoveRetriggerInterval;
+		return true;
+	}
 
-        // How far to step back — enough to clear the kite deadzone
-        float stepBack = kiteDistance - Vector2.Distance(self.position, enemy.position)
-                         + RetreaTriggerMargin + 1.0f;
-        stepBack = Mathf.Max(stepBack, 1.5f);
+	private void TryStrafe(Transform self)
+	{
+		if (Time.time < _nextStrafeTime)
+		{
+			StopMovement(self);
+			return;
+		}
 
-        Vector3 retreatPos = self.position + awayDir * stepBack;
+		_nextStrafeTime = Time.time + StrafeInterval;
+		_strafeDirection = -_strafeDirection;
 
-        // Stuck check — if we haven't moved since the last interval, give up retreating
-        if (Time.time >= _nextStuckCheckAt)
-        {
-            float moved = Vector3.Distance(self.position, _lastCheckedPos);
-            if (moved < StuckDistanceThreshold && _state == CombatState.Retreating)
-            {
-                Debug.Log($"[KiteAndAttack] {self.name} stuck while retreating — holding position.");
-                _lastCheckedPos   = self.position;
-                _nextStuckCheckAt = Time.time + MovementCheckInterval;
-                return false;
-            }
-            _lastCheckedPos   = self.position;
-            _nextStuckCheckAt = Time.time + MovementCheckInterval;
-        }
+		Vector3 toEnemy = (_enemy.position - self.position).normalized;
+		Vector3 perpDir = new Vector3(-toEnemy.y, toEnemy.x, 0f) * _strafeDirection;
+		TriggerMove(self, self.position + perpDir * StrafeDistance);
+	}
 
-        SetMoveTarget(self, retreatPos);
-        return true;
-    }
+	/// <summary>
+	/// Moves the unit toward <paramref name="worldPos"/> via the pathfinding system.
+	/// Uses a reusable hidden GameObject as the movement target so the pathfinder
+	/// has a Transform to navigate to — this GO is intentionally never stored in
+	/// bb["target"] to avoid clobbering the enemy reference.
+	/// </summary>
+	private void TriggerMove(Transform self, Vector3 worldPos)
+	{
+		if (_moveTargetGO == null)
+			_moveTargetGO = new GameObject("_KiteTarget");
 
-    /// <summary>
-    /// Periodically step sideways to dodge predictive attacks.
-    /// </summary>
-    private void TryStrafe(Transform self, Transform enemy)
-    {
-        if (Time.time < _nextStrafeTime)
-        {
-            // Between strafes — stop so we don't drift out of range
-            StopMovement(self);
-            return;
-        }
+		_moveTargetGO.transform.position = worldPos;
 
-        _nextStrafeTime  = Time.time + StrafeInterval;
-        _strafeDirection = -_strafeDirection;   // alternate sides
+		// Do NOT write _moveTargetGO into bb["target"] — that would replace
+		// the enemy reference and break the attack check next frame.
+		var mc = self.GetComponent<MovementComponent>();
+		mc?.OnTriggerMove(self, _moveTargetGO.transform);
+	}
 
-        // Perpendicular to the enemy direction
-        Vector3 toEnemy   = (enemy.position - self.position).normalized;
-        Vector3 perpDir   = new Vector3(-toEnemy.y, toEnemy.x, 0f) * _strafeDirection;
-        Vector3 strafePos = self.position + perpDir * StrafeDistance;
+	private void StopMovement(Transform self)
+	{
+		var pf = self.GetComponent<UnitPathFollower>();
+		if (pf != null) pf.StopAllCoroutines();
+	}
 
-        Debug.Log($"[KiteAndAttack] {self.name} strafing {(_strafeDirection > 0 ? "right" : "left")}");
-        SetMoveTarget(self, strafePos);
-    }
-
-    // ── Move-target management ────────────────────────────────────────────────
-
-    private void SetMoveTarget(Transform self, Vector3 worldPos)
-    {
-        // Reuse the same GO to avoid per-frame allocations
-        if (_moveTargetGO == null)
-            _moveTargetGO = new GameObject("KiteTarget");
-
-        _moveTargetGO.transform.position = worldPos;
-        bb.Set("target", _moveTargetGO.transform);
-
-        var mc = self.GetComponent<MovementComponent>();
-        mc?.OnTriggerMove(self, _moveTargetGO.transform);
-    }
-
-    private void StopMovement(Transform self)
-    {
-        self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
-    }
-
-    private void Cleanup(Transform self)
-    {
-        StopMovement(self);
-        if (_moveTargetGO != null)
-        {
-            Object.Destroy(_moveTargetGO);
-            _moveTargetGO = null;
-        }
-        _lastEnemy = null;
-    }
+	private void Cleanup(Transform self)
+	{
+		if (self != null) StopMovement(self);
+		if (_moveTargetGO != null)
+		{
+			Object.Destroy(_moveTargetGO);
+			_moveTargetGO = null;
+		}
+		_enemy = null;
+	}
 }

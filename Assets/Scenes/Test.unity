@@ -914,7 +914,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 742593927737155802, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       propertyPath: minEnemiesPerRoom
-      value: 1
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 3786735546994157275, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       propertyPath: m_Name
