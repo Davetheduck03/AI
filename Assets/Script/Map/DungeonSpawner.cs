@@ -98,7 +98,7 @@ public class DungeonSpawner : MonoBehaviour
         // ── Enemies in non-start, non-chest rooms ──
         for (int i = 1; i < roomCount; i++)
         {
-            if (chestRooms.Contains(i)) continue;
+            //if (chestRooms.Contains(i)) continue;
             int count = Random.Range(minEnemiesPerRoom, maxEnemiesPerRoom + 1);
             for (int e = 0; e < count; e++)
                 SpawnEnemy(gen.GetRandomPositionInRoom(i));

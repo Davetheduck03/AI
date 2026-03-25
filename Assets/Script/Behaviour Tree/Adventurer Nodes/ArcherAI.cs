@@ -1,13 +1,11 @@
 using UnityEngine;
 
 /// <summary>
-/// Archer AI — Priority: Extract > Attack (at range) > Guard relic carrier > Loot > Pick up items > Explore.
+/// Archer AI — Priority: Extract > Attack (adaptive) > Guard relic carrier > Loot > Pick up items > Explore.
 ///
-/// Key differences from KnightAI:
-///   - Larger detection range; stays at bow range instead of charging in.
-///   - Approach distance is driven by the equipped weapon's AttackRange, not a hardcoded value.
-///   - "Guard relic carrier" sequence: if a teammate holds the relic the archer
-///     follows them rather than wandering off to loot.
+/// Uses AdaptiveAttack so behaviour automatically matches the equipped weapon:
+///   Bow equipped   → kites at preferred range (normal archer behaviour).
+///   Melee equipped → charges in like a knight (unusual but handled gracefully).
 /// </summary>
 public class ArcherAI : BehaviorTreeRunner
 {
@@ -15,8 +13,10 @@ public class ArcherAI : BehaviorTreeRunner
 
     [Header("Detection")]
     [SerializeField] private float enemyDetectionRange = 14f;
-    // Approach/standoff distance is driven by the equipped weapon's range
-    // (WeaponSO.range → DamageComponent.AttackRange) — no inspector field needed.
+
+    [Header("Kiting (when bow equipped)")]
+    [Tooltip("Preferred standoff distance. Clamped to attackRange - 0.3 automatically.")]
+    [SerializeField] private float kiteDistance = 3.5f;
 
     protected override void Start()
     {
@@ -34,16 +34,13 @@ public class ArcherAI : BehaviorTreeRunner
         extractSeq.AddChild(new TriggerWin(bb));
         root.AddChild(extractSeq);
 
-        // ── Priority 1: ATTACK ───────────────────────────────────────────────
-        // MoveAndAttack reads AttackRange live, so the archer automatically keeps
-        // the distance matching whatever bow is equipped.
+        // ── Priority 1: ATTACK (adaptive) ────────────────────────────────────
         var attackSeq = new Sequence(bb);
         attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange));
-        attackSeq.AddChild(new MoveAndAttack(bb, enemyLayer));
+        attackSeq.AddChild(new AdaptiveAttack(bb, enemyLayer, kiteDistance));
         root.AddChild(attackSeq);
 
         // ── Priority 2: GUARD RELIC CARRIER ─────────────────────────────────
-        // Follows the relic-carrying teammate at close range to cover their escape.
         var guardSeq = new Sequence(bb);
         guardSeq.AddChild(new IsRelicHeldByTeammate(bb, team));
         guardSeq.AddChild(new MoveTowardsTarget(bb, 2f, "relicHolder"));
@@ -82,5 +79,8 @@ public class ArcherAI : BehaviorTreeRunner
 
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, enemyDetectionRange);
+
+        Gizmos.color = new Color(0f, 0.8f, 1f, 0.4f);
+        Gizmos.DrawWireSphere(transform.position, kiteDistance);
     }
 }

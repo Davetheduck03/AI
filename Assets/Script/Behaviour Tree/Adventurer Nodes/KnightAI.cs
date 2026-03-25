@@ -2,7 +2,11 @@
 using UnityEngine;
 
 /// <summary>
-/// Knight AI — Priority: Attack > Loot > Explore.
+/// Knight AI — Priority: Extract > Attack > Loot > Pick up items > Explore.
+///
+/// Combat adapts to the equipped weapon at runtime:
+///   Melee weapon (Sword, LongSword, Dagger) → charges in and attacks.
+///   Ranged weapon (Bow)                     → kites at preferred range.
 /// </summary>
 public class KnightAI : BehaviorTreeRunner
 {
@@ -10,7 +14,10 @@ public class KnightAI : BehaviorTreeRunner
 
     [Header("Detection")]
     [SerializeField] private float enemyDetectionRange = 10f;
-    // Approach distance is now driven by the equipped weapon's range (WeaponSO.range → DamageComponent.AttackRange).
+
+    [Header("Kiting (when ranged weapon equipped)")]
+    [Tooltip("Preferred standoff distance used when a bow is equipped.")]
+    [SerializeField] private float kiteDistance = 3.5f;
 
     protected override void Start()
     {
@@ -21,44 +28,43 @@ public class KnightAI : BehaviorTreeRunner
     {
         var root = new Selector(bb);
 
-        // Priority 0: EXTRACT — runs only after the Relic is collected.
-        // Overrides combat/loot/explore — hero ignores everything and heads for the exit.
+        // ── Priority 0: EXTRACT ──────────────────────────────────────────────
         var extractSeq = new Sequence(bb);
-        extractSeq.AddChild(new SetExtractionTarget(bb));           // Fails if no relic
-        extractSeq.AddChild(new MoveTowardsTarget(bb, 1.0f));       // Walk to extraction point
-        extractSeq.AddChild(new TriggerWin(bb));                    // Fire Win state on arrival
+        extractSeq.AddChild(new SetExtractionTarget(bb));
+        extractSeq.AddChild(new MoveTowardsTarget(bb, 1.0f));
+        extractSeq.AddChild(new TriggerWin(bb));
         root.AddChild(extractSeq);
 
-        // Priority 1: ATTACK
+        // ── Priority 1: ATTACK ───────────────────────────────────────────────
+        // AdaptiveAttack checks the equipped weapon every tick and delegates to
+        // KiteAndAttack (bow) or MoveAndAttack (melee) automatically.
         var attackSeq = new Sequence(bb);
         attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange));
-        attackSeq.AddChild(new MoveAndAttack(bb, enemyLayer));
+        attackSeq.AddChild(new AdaptiveAttack(bb, enemyLayer, kiteDistance));
         root.AddChild(attackSeq);
 
-		// Priority 2: LOOT CHESTS
-		var lootSeq = new Sequence(bb);
-		lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
-		lootSeq.AddChild(new FindLootInRange(bb, 10f));
-		lootSeq.AddChild(new IsTargetRevealed(bb));
-		lootSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
-		lootSeq.AddChild(new LootTarget(bb));
-		root.AddChild(lootSeq);
+        // ── Priority 2: LOOT CHESTS ──────────────────────────────────────────
+        var lootSeq = new Sequence(bb);
+        lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
+        lootSeq.AddChild(new FindLootInRange(bb, 10f));
+        lootSeq.AddChild(new IsTargetRevealed(bb));
+        lootSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
+        lootSeq.AddChild(new LootTarget(bb));
+        root.AddChild(lootSeq);
 
-		// Priority 3: PICK UP WORLD ITEMS (dropped gear)
-		// approachRange matches LootTarget's maxLootDistance so the pathfinder
-		// can reliably arrive — PickupItem has no distance requirement of its own.
-		var worldItemSeq = new Sequence(bb);
-		worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
-		worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 8f));
-		worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));
-		worldItemSeq.AddChild(new PickupItem(bb));
-		root.AddChild(worldItemSeq);
+        // ── Priority 3: PICK UP WORLD ITEMS ─────────────────────────────────
+        var worldItemSeq = new Sequence(bb);
+        worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
+        worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 8f));
+        worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));
+        worldItemSeq.AddChild(new PickupItem(bb));
+        root.AddChild(worldItemSeq);
 
-		// Priority 4: EXPLORE
-		var exploreSeq = new Sequence(bb);
+        // ── Priority 4: EXPLORE ──────────────────────────────────────────────
+        var exploreSeq = new Sequence(bb);
         exploreSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
         exploreSeq.AddChild(new FindFogCluster(bb, 50f));
-        exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f)); // must reach the fog tile, not just get close
+        exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);
 
         return root;

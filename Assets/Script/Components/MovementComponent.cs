@@ -7,9 +7,6 @@ public class MovementComponent : UnitComponent
     private UnitPathFollower agent;
 
     // ── Claimed-destination registry ─────────────────────────────────────
-    // Maps a PathNode to whichever hero's Transform has claimed it as their
-    // movement destination. This prevents multiple heroes from all pathing to
-    // the exact same tile and stacking on top of each other.
     private static readonly Dictionary<PathNode, Transform> _claimedNodes
         = new Dictionary<PathNode, Transform>();
 
@@ -26,28 +23,33 @@ public class MovementComponent : UnitComponent
         ReleaseClaim();
     }
 
+    // Release on destroy so dead units don't keep tiles claimed forever.
+    private void OnDestroy()
+    {
+        ReleaseClaim();
+    }
+
     public void OnTriggerMove(Transform self, Transform target)
     {
-        PathNode start = GridGenerator.Instance.GetNodeAtWorldPosition(self.position);
-        PathNode goal  = GridGenerator.Instance.GetNodeAtWorldPosition(target.position);
+        // Guard: component or its GameObject may already be destroyed.
+        if (this == null || !this || self == null) return;
 
-        // If the hero stopped mid-tile (e.g. StopAllCoroutines called between nodes),
-        // their world position may not land on a tile centre. Snap to nearest node.
+        PathNode start = GridGenerator.Instance.GetNodeAtWorldPosition(self.position);
+        PathNode goal = GridGenerator.Instance.GetNodeAtWorldPosition(target.position);
+
         if (start == null)
         {
             start = GridGenerator.Instance.GetNearestWalkableNode(self.position, maxSearchRadius: 5);
             if (start != null)
-                self.position = start.transform.position;   // snap hero back onto the grid
+                self.position = start.transform.position;
         }
 
-        // Same fallback for the destination.
         if (goal == null)
         {
             Debug.LogWarning($"Target {target.position} not on walkable tile. Finding nearest...");
             goal = GridGenerator.Instance.GetNearestWalkableNode(target.position, maxSearchRadius: 20);
         }
 
-        // Validate nodes exist
         if (start == null)
         {
             Debug.LogError($"Start position {self.position} has no walkable PathNode within range!");
@@ -60,16 +62,22 @@ public class MovementComponent : UnitComponent
             return;
         }
 
-        // Claim a destination tile so heroes spread to adjacent tiles instead of
-        // all converging on the exact same node.
         goal = ClaimGoal(goal, self);
 
-        Debug.Log($"Pathfinding: {start.name} → {goal.name}");
+        Debug.Log($"Pathfinding: {start.name} -> {goal.name}");
+
+        // Capture component references so the lambda can null-check them after
+        // the coroutine completes — the unit may have died during that one frame.
+        MovementComponent self_mc = this;
+        UnitPathFollower self_pf = agent;
 
         Astar.Instance.FindPath(start, goal, (path) =>
         {
+            if (self_mc == null || !self_mc) return;
+            if (self_pf == null || !self_pf) return;
+
             if (path != null && path.Count > 0)
-                agent.SetPath(path, movement_Speed, this);
+                self_pf.SetPath(path, movement_Speed, self_mc);
             else
                 Debug.LogWarning("No valid path found between nodes!");
         });
@@ -77,16 +85,10 @@ public class MovementComponent : UnitComponent
 
     // ── Claim helpers ────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Claims <paramref name="preferred"/> for <paramref name="self"/>.
-    /// If another hero already claimed that tile, walks the node's neighbours
-    /// to find a free adjacent tile. Falls back to the original if all are taken.
-    /// </summary>
     private PathNode ClaimGoal(PathNode preferred, Transform self)
     {
         ReleaseClaim();
 
-        // Try the preferred node first
         if (!_claimedNodes.TryGetValue(preferred, out var owner) || owner == self)
         {
             _claimedNodes[preferred] = self;
@@ -94,7 +96,7 @@ public class MovementComponent : UnitComponent
             return preferred;
         }
 
-        // Preferred already claimed by someone else — find a free neighbour
+        // Preferred already claimed — find a free neighbour
         foreach (PathNode nb in preferred.neighbors)
         {
             if (nb == null || !nb.isWalkable) continue;
@@ -106,7 +108,7 @@ public class MovementComponent : UnitComponent
             }
         }
 
-        // All neighbours also claimed — fall back to the preferred tile anyway
+        // All neighbours claimed — fall back to preferred
         _claimedNodes[preferred] = self;
         _myClaimedNode = preferred;
         return preferred;
