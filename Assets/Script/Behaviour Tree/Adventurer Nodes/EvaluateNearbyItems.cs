@@ -11,7 +11,7 @@ public class EvaluateNearbyItems : Node
 {
 	private float searchRange;
 
-	public EvaluateNearbyItems(Blackboard bb, float searchRange = 5f) : base(bb)
+	public EvaluateNearbyItems(Blackboard bb, float searchRange = 16f) : base(bb)
 	{
 		this.searchRange = searchRange;
 	}

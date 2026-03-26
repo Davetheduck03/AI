@@ -11,6 +11,7 @@ using UnityEngine;
 public class KnightAI : BehaviorTreeRunner
 {
     [SerializeField] private LayerMask enemyLayer;
+    [SerializeField] private LayerMask wallLayers;
 
     [Header("Detection")]
     [SerializeField] private float enemyDetectionRange = 10f;
@@ -39,13 +40,13 @@ public class KnightAI : BehaviorTreeRunner
         // AdaptiveAttack checks the equipped weapon every tick and delegates to
         // KiteAndAttack (bow) or MoveAndAttack (melee) automatically.
         var attackSeq = new Sequence(bb);
-        attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange));
-        attackSeq.AddChild(new AdaptiveAttack(bb, enemyLayer, kiteDistance));
+        attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange, wallLayers));
+        attackSeq.AddChild(new AdaptiveAttack(bb, enemyLayer, kiteDistance, wallLayers));
         root.AddChild(attackSeq);
 
         // ── Priority 2: LOOT CHESTS ──────────────────────────────────────────
         var lootSeq = new Sequence(bb);
-        lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
+        lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         lootSeq.AddChild(new FindLootInRange(bb, 10f));
         lootSeq.AddChild(new IsTargetRevealed(bb));
         lootSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
@@ -54,15 +55,23 @@ public class KnightAI : BehaviorTreeRunner
 
         // ── Priority 3: PICK UP WORLD ITEMS ─────────────────────────────────
         var worldItemSeq = new Sequence(bb);
-        worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
-        worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 8f));
+        worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
+        worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 16f));
         worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));
         worldItemSeq.AddChild(new PickupItem(bb));
         root.AddChild(worldItemSeq);
 
-        // ── Priority 4: EXPLORE ──────────────────────────────────────────────
+        // ── Priority 4: FOLLOW LEADER (followers only) ───────────────────────
+        // Leaders return Failure from FollowLeader and fall through to Explore.
+        // If the leader dies, followers also fall through to Explore (independent).
+        var followSeq = new Sequence(bb);
+        followSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
+        followSeq.AddChild(new FollowLeader(bb, 1.5f));
+        root.AddChild(followSeq);
+
+        // ── Priority 5: EXPLORE (leader + fallback for all) ──────────────────
         var exploreSeq = new Sequence(bb);
-        exploreSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange));
+        exploreSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         exploreSeq.AddChild(new FindFogCluster(bb, 50f));
         exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);

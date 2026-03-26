@@ -3,18 +3,24 @@ using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// Displays the hero's currently equipped weapon, head armour, and body armour.
-/// Attach to a Canvas UI GameObject. Assign the hero via Inspector or let it
-/// auto-find the first GameObject tagged "Hero" on Start.
+/// Displays one hero's equipped weapon, head armour, body armour, and relic
+/// inside a side-panel slot.
+///
+/// At runtime PartyEquipmentPanelUI calls SetHero() to bind this panel to a
+/// specific hero. You no longer need to drag references in the Inspector —
+/// the binding happens automatically when heroes are spawned.
 ///
 /// Each slot needs:
-///   - An Image component for the item icon  (leave Source Image blank — filled at runtime)
+///   - An Image component for the item icon  (Source Image filled at runtime)
 ///   - (Optional) A TextMeshProUGUI for the item name
 /// </summary>
 public class HeroEquipmentUI : MonoBehaviour
 {
-    [Header("Hero Reference")]
-    [Tooltip("Drag the hero GameObject here, or leave empty to auto-find by tag 'Hero'.")]
+    [Header("Player Label")]
+    [Tooltip("Text element that shows 'Player 1', 'Player 2', etc.")]
+    [SerializeField] private TextMeshProUGUI playerLabel;
+
+    [Header("Hero Reference (set via SetHero() at runtime)")]
     [SerializeField] private EquipmentComponent heroEquipment;
 
     [Header("Weapon Slot")]
@@ -45,18 +51,10 @@ public class HeroEquipmentUI : MonoBehaviour
 
     private void Start()
     {
-        if (heroEquipment == null)
-        {
-            GameObject hero = GameObject.FindGameObjectWithTag("Hero");
-            if (hero != null)
-                heroEquipment = hero.GetComponent<EquipmentComponent>();
-
-            if (heroEquipment == null)
-                Debug.LogWarning("[HeroEquipmentUI] No EquipmentComponent found. " +
-                                 "Assign it in the Inspector or tag the hero 'Hero'.");
-        }
-
-        RefreshAll();
+        // If a hero was pre-assigned in the Inspector, initialize straight away.
+        // Otherwise wait for SetHero() to be called by PartyEquipmentPanelUI.
+        if (heroEquipment != null)
+            RefreshAll();
     }
 
     private void Update()
@@ -87,6 +85,24 @@ public class HeroEquipmentUI : MonoBehaviour
             _lastRelic = heroEquipment.equippedRelic;
             RefreshSlot(relicIcon, relicName, _lastRelic);
         }
+    }
+
+    // ─────────────────────────────────────────────
+    // PUBLIC API
+    // ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Binds this panel to a specific hero at runtime.
+    /// Called by PartyEquipmentPanelUI after heroes are spawned.
+    /// </summary>
+    public void SetHero(EquipmentComponent equipment, int index)
+    {
+        heroEquipment = equipment;
+
+        if (playerLabel != null)
+            playerLabel.text = $"Player {index + 1}";
+
+        RefreshAll();
     }
 
     // ─────────────────────────────────────────────

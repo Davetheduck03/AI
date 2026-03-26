@@ -19,15 +19,17 @@ public class MoveTowardsTarget : Node
     private float nextStuckCheckTime = 0f;
     private Vector3 lastCheckedPosition = Vector3.zero;
 
+    // ── Constructor ───────────────────────────────────────────────────────────
+
     public MoveTowardsTarget(Blackboard bb, float range = 3f, string targetKey = "target") : base(bb)
     {
         this.approachRange = range;
-        this.targetKey = targetKey;
+        this.targetKey     = targetKey;
     }
 
     public override NodeState Evaluate()
     {
-        Transform self = bb.Get<Transform>("self");
+        Transform self   = bb.Get<Transform>("self");
         Transform target = bb.Get<Transform>(targetKey);
 
         if (self == null || target == null)
@@ -37,24 +39,24 @@ public class MoveTowardsTarget : Node
         }
 
         // Check if target is destroyed
-        if (target == null || target.gameObject == null)
+        if (target.gameObject == null)
         {
             Debug.Log("MoveTowardsTarget: Target destroyed");
             Reset();
             return NodeState.Failure;
         }
 
-        // If target changed, start new movement immediately
-        if (target != lastTarget)
+        // ── Decide whether to (re-)trigger movement ───────────────────────────
+
+        bool isNewRawTarget = target != lastTarget;
+
+        if (isNewRawTarget)
         {
             Debug.Log($"MoveTowardsTarget: New target - {target.name}");
 
-            // Stop current movement
+            // Stop previous movement
             UnitPathFollower pathFollower = self.GetComponent<UnitPathFollower>();
-            if (pathFollower != null)
-            {
-                pathFollower.StopAllCoroutines();
-            }
+            pathFollower?.StopAllCoroutines();
 
             MovementComponent movementComp = self.GetComponent<MovementComponent>();
             if (movementComp == null)
@@ -63,40 +65,38 @@ public class MoveTowardsTarget : Node
                 return NodeState.Failure;
             }
 
-            // Get actual destination
+            // Resolve the actual grid destination
             PathNode goalNode = GridGenerator.Instance.GetNodeAtWorldPosition(target.position);
             if (goalNode == null)
-            {
                 goalNode = GridGenerator.Instance.GetNearestWalkableNode(target.position);
-            }
-
             actualDestination = goalNode != null ? goalNode.transform.position : target.position;
 
             movementComp.OnTriggerMove(self, target);
-            lastTarget = target;
+
+            lastTarget          = target;
             lastCheckedPosition = self.position;
-            nextStuckCheckTime = Time.time + StuckCheckInterval;
+            nextStuckCheckTime  = Time.time + StuckCheckInterval;
         }
 
-        // For enemies, check distance to the enemy itself
-        // For static targets, check distance to actual destination
+        // ── Arrival check ─────────────────────────────────────────────────────
+
+        // For enemies follow their live position; for static goals use the grid-snapped destination.
         bool isEnemy = target.CompareTag("Enemy");
-        Vector3 checkPosition = isEnemy ? target.position : (actualDestination ?? target.position);
+        Vector3 checkPosition = isEnemy
+            ? target.position
+            : (actualDestination ?? target.position);
+
         float distance = Vector3.Distance(self.position, checkPosition);
 
         if (distance <= approachRange)
         {
             Debug.Log($"MoveTowardsTarget: Arrived at {target.name} (dist: {distance:F2})");
-
-            UnitPathFollower pathFollower = self.GetComponent<UnitPathFollower>();
-            if (pathFollower != null)
-            {
-                pathFollower.StopAllCoroutines();
-            }
-
+            self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
             Reset();
             return NodeState.Success;
         }
+
+        // ── Stuck detection ───────────────────────────────────────────────────
 
         // Periodically check if the hero has actually moved. If they haven't
         // covered StuckDistanceThreshold units since the last check, the target
@@ -108,15 +108,15 @@ public class MoveTowardsTarget : Node
             float movedDistance = Vector3.Distance(self.position, lastCheckedPosition);
             if (movedDistance < StuckDistanceThreshold)
             {
-                Debug.Log($"MoveTowardsTarget: Hero hasn't moved ({movedDistance:F2} units in {StuckCheckInterval}s) — target likely unreachable, returning Failure");
-                UnitPathFollower pathFollower = self.GetComponent<UnitPathFollower>();
-                if (pathFollower != null) pathFollower.StopAllCoroutines();
+                Debug.Log($"MoveTowardsTarget: Hero hasn't moved ({movedDistance:F2} units in " +
+                          $"{StuckCheckInterval}s) — target likely unreachable, returning Failure");
+                self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
                 Reset();
                 return NodeState.Failure;
             }
 
             lastCheckedPosition = self.position;
-            nextStuckCheckTime = Time.time + StuckCheckInterval;
+            nextStuckCheckTime  = Time.time + StuckCheckInterval;
         }
 
         return NodeState.Running;
@@ -124,9 +124,9 @@ public class MoveTowardsTarget : Node
 
     private void Reset()
     {
-        // lastTarget = null;  ← intentionally not cleared so target-change detection still works
-        actualDestination = null;
-        nextStuckCheckTime = 0f;
-        lastCheckedPosition = Vector3.zero;
+        // lastTarget intentionally not cleared — change detection still works
+        actualDestination     = null;
+        nextStuckCheckTime    = 0f;
+        lastCheckedPosition   = Vector3.zero;
     }
 }

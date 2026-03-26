@@ -7,6 +7,12 @@ using UnityEngine;
 /// </summary>
 public class BaseHero : BaseUnit
 {
+    /// <summary>
+    /// 0-based index assigned by DungeonSpawner at spawn time (0 = Player 1, etc.).
+    /// Used by UnitNameUI and PartyEquipmentPanelUI.
+    /// </summary>
+    [HideInInspector] public int playerIndex = 0;
+
     private void OnEnable()
     {
         HealthComponent.OnDeath += HandleDeath;

@@ -6,6 +6,9 @@ public class HealthComponent : UnitComponent
     /// <summary>Fired just before the owning GameObject is destroyed. Used by BaseHero to trigger the lose state.</summary>
     public static event Action<HealthComponent> OnDeath;
 
+    // Optional flash effect — present on units that have a SpriteRenderer.
+    private HitFlashEffect _flash;
+
     public float currentHealth { get; private set; }
     public float maxHealth { get; private set; }
     public bool isDamagable { get; private set; }
@@ -22,10 +25,13 @@ public class HealthComponent : UnitComponent
 
     protected override void OnInitialize()
     {
-        baseArmor = data.armor;
-        maxHealth = data.Health;
+        baseArmor     = data.armor;
+        maxHealth     = data.Health;
         currentHealth = maxHealth;
-        isDamagable = true;
+        isDamagable   = true;
+
+        // Grab the flash effect if this unit has one (not mandatory).
+        _flash = GetComponent<HitFlashEffect>();
     }
 
     public void AddArmorBonus(float amount)
@@ -52,8 +58,22 @@ public class HealthComponent : UnitComponent
                   $"({data.amount:F1} raw, {DamageReduction:P0} reduced). " +
                   $"HP: {currentHealth:F1}/{maxHealth}");
 
+        _flash?.FlashDamage();
+
         if (currentHealth <= 0)
             Die();
+    }
+
+    /// <summary>Restores <paramref name="amount"/> HP, capped at max health.</summary>
+    public void Heal(float amount)
+    {
+        if (amount <= 0f) return;
+        float before = currentHealth;
+        currentHealth = Mathf.Min(currentHealth + amount, maxHealth);
+        Debug.Log($"[HealthComponent] {gameObject.name} healed {currentHealth - before:F1} HP. " +
+                  $"HP: {currentHealth:F1}/{maxHealth}");
+
+        _flash?.FlashHeal();
     }
 
     /// <summary>Resets health to max and re-enables damage. Used when the hero is respawned.</summary>

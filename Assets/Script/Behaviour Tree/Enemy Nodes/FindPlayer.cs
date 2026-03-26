@@ -1,13 +1,24 @@
 using UnityEngine;
 
 /// <summary>
-/// ACTION: Finds the player (tagged "Player") within detection range.
-/// Returns Success if found, Failure if out of range or not visible.
+/// ACTION: Finds the NEAREST player (tagged "Player") within detection range
+/// that also has a clear line of sight.
+///
+/// Using FindGameObjectsWithTag (plural) so every hero in a 4-player party is
+/// considered — the original singular version always returned the same hero,
+/// causing enemies to ignore whichever heroes Unity didn't happen to return first.
+///
+/// On losing sight the enemy's path is stopped so it doesn't ghost toward the
+/// last known position.
 /// </summary>
 public class FindPlayer : Node
 {
     private float detectionRange;
     private LayerMask visionBlockingLayers;
+
+    // Tracks whether we had a target last tick so we stop movement exactly once
+    // on the transition from "chasing" → "lost".
+    private bool wasChasing = false;
 
     public FindPlayer(Blackboard bb, float range = 15f, LayerMask? blockingLayers = null) : base(bb)
     {
@@ -20,27 +31,45 @@ public class FindPlayer : Node
         Transform self = bb.Get<Transform>("self");
         if (self == null) return NodeState.Failure;
 
-        GameObject player = GameObject.FindGameObjectWithTag("Player");
-        
-        if (player == null) return NodeState.Failure;
+        // Check every hero tagged "Player" and pick the nearest one in LOS.
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
 
-        float dist = Vector3.Distance(self.position, player.transform.position);
+        Transform bestTarget = null;
+        float bestDist = detectionRange;
 
-        // Check if in range
-        if (dist > detectionRange)
+        foreach (GameObject playerObj in players)
         {
-            return NodeState.Failure;
+            if (playerObj == null) continue;
+
+            float dist = Vector3.Distance(self.position, playerObj.transform.position);
+            if (dist > bestDist) continue;
+
+            if (!VisionUtilities.HasLineOfSight(self.position, playerObj.transform.position, visionBlockingLayers))
+                continue;
+
+            bestDist = dist;
+            bestTarget = playerObj.transform;
         }
 
-        // Check line of sight
-        if (!VisionUtilities.HasLineOfSight(self.position, player.transform.position, visionBlockingLayers))
+        if (bestTarget != null)
         {
-            return NodeState.Failure;
+            wasChasing = true;
+            bb.Set("target", bestTarget);
+            Debug.Log($"Enemy spotted player at distance: {bestDist:F1}");
+            return NodeState.Success;
         }
 
-        // Player found and visible
-        bb.Set("target", player.transform);
-        Debug.Log($"Enemy spotted player at distance: {dist:F1}");
-        return NodeState.Success;
+        // Player left line-of-sight — stop any leftover chase movement so the
+        // enemy doesn't ghost toward the last known position.
+        if (wasChasing)
+        {
+            wasChasing = false;
+            var pf = self.GetComponent<UnitPathFollower>();
+            pf?.StopAllCoroutines();
+            bb.Set<Transform>("target", null);
+            Debug.Log($"[FindPlayer] {self.name} lost sight of all players — dropping aggro");
+        }
+
+        return NodeState.Failure;
     }
 }

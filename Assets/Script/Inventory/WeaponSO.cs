@@ -19,11 +19,19 @@ public class WeaponSO : ItemSO
     public float damageBonus;
     public float attackSpeedBonus;  // Added to unit's baseAttackSpeed
 
-    [Tooltip("Attack range for this weapon. 0 = use the hero's base range from HeroSO.")]
+    [Header("Range")]
+    [Tooltip("Attack range for this weapon. 0 = use the hero's base range from HeroSO.\n" +
+             "Balanced tiers: Bow 4.5 | Staff 3.5 | LongSword 3.0 | Sword 2.5 | Dagger 1.5")]
     public float range;
 
+    /// <summary>
+    /// Composite score used by EquipmentComponent to decide whether to pick up this weapon.
+    ///   damage      — primary power stat (weight 1.0)
+    ///   attackSpeed — affects DPS          (weight 0.5, half of damage to avoid speed dominating)
+    ///   range       — affects safety/kiting (weight 0.2, tiebreaker between otherwise equal weapons)
+    /// </summary>
     public override float GetScore()
     {
-        return damageBonus + (attackSpeedBonus * 0.5f);
+        return damageBonus + (attackSpeedBonus * 0.5f) + (range * 0.2f);
     }
 }

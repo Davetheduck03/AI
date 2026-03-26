@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -15,6 +16,13 @@ using UnityEngine;
 public class DungeonSpawner : MonoBehaviour
 {
     public static DungeonSpawner Instance { get; private set; }
+
+    /// <summary>
+    /// Fired after the party is placed (or repositioned) each run.
+    /// Subscribers receive the ordered list of living hero GameObjects.
+    /// PartyEquipmentPanelUI uses this to bind its side-panel slots.
+    /// </summary>
+    public static event Action<List<GameObject>> OnPartySpawned;
 
     // ─── Inspector ─────────────────────────────────────────────────────────
 
@@ -99,7 +107,7 @@ public class DungeonSpawner : MonoBehaviour
         for (int i = 1; i < roomCount; i++)
         {
             //if (chestRooms.Contains(i)) continue;
-            int count = Random.Range(minEnemiesPerRoom, maxEnemiesPerRoom + 1);
+            int count = UnityEngine.Random.Range(minEnemiesPerRoom, maxEnemiesPerRoom + 1);
             for (int e = 0; e < count; e++)
                 SpawnEnemy(gen.GetRandomPositionInRoom(i));
         }
@@ -141,8 +149,15 @@ public class DungeonSpawner : MonoBehaviour
 
             Vector3 pos = centerPos + PartySpawnOffset(i, party.Count);
             GameObject hero = Instantiate(entry.prefab, pos, Quaternion.identity);
+
+            // Tag each hero with its party slot so UI can label them "Player 1", "Player 2", etc.
+            var baseHero = hero.GetComponent<BaseHero>();
+            if (baseHero != null) baseHero.playerIndex = i;
+
             _heroes.Add(hero);
         }
+
+        OnPartySpawned?.Invoke(_heroes);
     }
 
     /// <summary>
@@ -156,6 +171,8 @@ public class DungeonSpawner : MonoBehaviour
             if (_heroes[i] == null) continue;
             _heroes[i].transform.position = centerPos + PartySpawnOffset(i, _heroes.Count);
         }
+
+        OnPartySpawned?.Invoke(_heroes);
     }
 
     /// <summary>
@@ -193,7 +210,7 @@ public class DungeonSpawner : MonoBehaviour
     private void SpawnEnemy(Vector3 pos)
     {
         if (enemyPrefabs == null || enemyPrefabs.Length == 0) return;
-        var prefab = enemyPrefabs[Random.Range(0, enemyPrefabs.Length)];
+        var prefab = enemyPrefabs[UnityEngine.Random.Range(0, enemyPrefabs.Length)];
         if (prefab == null) return;
 
         var obj = Instantiate(prefab, pos, Quaternion.identity);
@@ -273,7 +290,7 @@ public class DungeonSpawner : MonoBehaviour
 
         for (int i = pool.Count - 1; i > 0; i--)
         {
-            int j = Random.Range(0, i + 1);
+            int j = UnityEngine.Random.Range(0, i + 1);
             (pool[i], pool[j]) = (pool[j], pool[i]);
         }
 

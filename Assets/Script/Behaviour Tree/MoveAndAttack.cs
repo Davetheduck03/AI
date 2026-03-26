@@ -85,6 +85,9 @@ public class MoveAndAttack : Node
                     arrived = false;
                     lastTarget = null;
                     StopMovement(self);
+                    bb.Set<Transform>("target", null);
+                    bb.Set<Transform>("itemTarget", null);
+                    bb.Set<WorldItem>("targetWorldItem", null);
                     return NodeState.Failure;
                 }
                 return NodeState.Running;
@@ -113,17 +116,29 @@ public class MoveAndAttack : Node
         {
             damageComp.TryDealDamage(target.gameObject, selfPos2D, targetLayer);
             lastAttackTime = Time.time;
+            StopMovement(self);
+            bb.Set<Transform>("target", null);
             return NodeState.Success;
         }
 
         // Single-target attack — deal damage directly.
-        // 'arrived' already confirmed we are within AttackRange, so no raycast
-        // is needed. A raycast relying on targetLayer being set correctly in
-        // every prefab's Inspector is fragile (wrong layer → always "blocked" →
-        // archer endlessly repositions and never fires).
+        string targetName = target.name;
         damageComp.TryDealDamage(target.gameObject);
         lastAttackTime = Time.time;
-        Debug.Log($"[MoveAndAttack] {self.name} hit {target.name} (dist: {dist:F2})");
+        Debug.Log($"[MoveAndAttack] {self.name} hit {targetName} (dist: {dist:F2})");
+
+        // If the attack killed the target, stop movement and clear the blackboard
+        // immediately so lower-priority sequences don't read a stale reference.
+        if (target == null || target.gameObject == null)
+        {
+            arrived = false;
+            lastTarget = null;
+            StopMovement(self);
+            bb.Set<Transform>("target", null);
+            bb.Set<Transform>("itemTarget", null);
+            bb.Set<WorldItem>("targetWorldItem", null);
+        }
+
         return NodeState.Success;
     }
 

@@ -54,11 +54,14 @@ public class KiteAndAttack : Node
 
 	// ── Constructor ───────────────────────────────────────────────────────────
 
-	public KiteAndAttack(Blackboard bb, LayerMask targetLayer, float kiteDistance = 3.5f)
+	private readonly LayerMask _wallLayers;
+
+	public KiteAndAttack(Blackboard bb, LayerMask targetLayer, float kiteDistance = 3.5f, LayerMask wallLayers = default)
 		: base(bb)
 	{
 		this.kiteDistance = kiteDistance;
 		_targetLayer = targetLayer;
+		_wallLayers = wallLayers;
 	}
 
 	// ── Evaluate ──────────────────────────────────────────────────────────────
@@ -128,13 +131,34 @@ public class KiteAndAttack : Node
 		}
 
 		// ── Attack ────────────────────────────────────────────────────────────
-		if (dist <= effectiveAttackRange &&
+		// Check line-of-sight before firing — walls block ranged attacks.
+		bool hasLOS = _wallLayers == 0 ||
+		              VisionUtilities.HasLineOfSight(self.position, _enemy.position, _wallLayers);
+
+		// No LOS → force Closing so the archer moves around the obstacle.
+		if (!hasLOS && _state != CombatState.Closing)
+		{
+			_state = CombatState.Closing;
+			_nextMoveRetrigger = 0f;
+		}
+
+		if (hasLOS && dist <= effectiveAttackRange &&
 			Time.time - _lastAttackTime >= damageComp.AttackCooldown)
 		{
+			// Cache name before damage (the GO may be destroyed inside TryDealDamage)
+			string enemyName = _enemy.name;
 			damageComp.TryDealDamage(_enemy.gameObject);
 			_lastAttackTime = Time.time;
-			Debug.Log($"[KiteAndAttack] {self.name} hit {_enemy.name} " +
+			Debug.Log($"[KiteAndAttack] {self.name} hit {enemyName} " +
 					  $"dist={dist:F2} state={_state}");
+
+			// If the enemy died from this hit, clean up immediately so the retreat/
+			// strafe movement coroutine stops and bb["target"] is cleared.
+			// Without this the path-follower keeps running the old retreat path and
+			// the hero visibly stands still for up to 3 s after clearing the area.
+			if (_enemy == null || _enemy.gameObject == null)
+				Cleanup(self);
+
 			return NodeState.Success;
 		}
 
@@ -145,7 +169,8 @@ public class KiteAndAttack : Node
 
 	private bool TryRetreat(Transform self)
 	{
-		// Stuck check
+		// Stuck check: if we haven't actually moved since the last interval, force an
+		// immediate re-evaluation so we try an alternative direction this very frame.
 		if (Time.time >= _nextStuckCheckAt)
 		{
 			float moved = Vector3.Distance(self.position, _lastCheckedPos);
@@ -154,19 +179,52 @@ public class KiteAndAttack : Node
 
 			if (moved < StuckDistanceThreshold)
 			{
-				Debug.Log($"[KiteAndAttack] {self.name} stuck retreating — holding.");
-				return false;
+				Debug.Log($"[KiteAndAttack] {self.name} stuck retreating — trying alternative directions.");
+				_nextMoveRetrigger = 0f;   // force re-evaluation now, don't just give up
 			}
 		}
 
-		if (Time.time < _nextMoveRetrigger) return true;   // already moving
+		if (Time.time < _nextMoveRetrigger) return true;   // already moving, wait
 
-		Vector3 awayDir = (self.position - _enemy.position).normalized;
-		float stepBack = Mathf.Max(kiteDistance - Vector2.Distance(self.position, _enemy.position)
-									 + RetreatTriggerMargin + 1.0f, 1.5f);
-		TriggerMove(self, self.position + awayDir * stepBack);
-		_nextMoveRetrigger = Time.time + MoveRetriggerInterval;
-		return true;
+		Vector3 awayDir   = (self.position - _enemy.position).normalized;
+		Vector3 leftPerp  = new Vector3(-awayDir.y,  awayDir.x, 0f);
+		Vector3 rightPerp = new Vector3( awayDir.y, -awayDir.x, 0f);
+
+		float stepBack = Mathf.Max(
+			kiteDistance - Vector2.Distance(self.position, _enemy.position) + RetreatTriggerMargin + 1.0f,
+			1.5f);
+
+		// Candidate escape directions in priority order:
+		//   1. Straight back          (ideal kite)
+		//   2. Back-left diagonal     (slide left while backing)
+		//   3. Back-right diagonal    (slide right while backing)
+		//   4. Pure left              (corridor sidestep)
+		//   5. Pure right             (corridor sidestep)
+		Vector3[] candidates =
+		{
+			awayDir,
+			(awayDir + leftPerp).normalized,
+			(awayDir + rightPerp).normalized,
+			leftPerp,
+			rightPerp,
+		};
+
+		foreach (var dir in candidates)
+		{
+			Vector3 dest = self.position + dir * stepBack;
+			// GetNodeAtWorldPosition returns null for walls / outside the map, so a
+			// non-null result is a sufficient walkability check.
+			if (GridGenerator.Instance?.GetNodeAtWorldPosition(dest) != null)
+			{
+				TriggerMove(self, dest);
+				_nextMoveRetrigger = Time.time + MoveRetriggerInterval;
+				return true;
+			}
+		}
+
+		// Fully cornered — every direction leads into a wall, just hold fire.
+		Debug.Log($"[KiteAndAttack] {self.name} fully cornered — holding position.");
+		return false;
 	}
 
 	private void TryStrafe(Transform self)
@@ -219,5 +277,10 @@ public class KiteAndAttack : Node
 			_moveTargetGO = null;
 		}
 		_enemy = null;
+		// Clear shared blackboard keys so lower-priority sequences don't resume
+		// toward stale destinations after combat ends.
+		bb.Set<Transform>("target", null);
+		bb.Set<Transform>("itemTarget", null);
+		bb.Set<WorldItem>("targetWorldItem", null);
 	}
 }

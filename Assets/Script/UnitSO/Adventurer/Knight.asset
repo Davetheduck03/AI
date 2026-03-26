@@ -16,7 +16,7 @@ MonoBehaviour:
   UnitPrefab: {fileID: 0}
   Icon: {fileID: 0}
   Health: 100
-  Speed: 5
+  Speed: 3
   goldReward: 0
   baseDamage: 25
   baseAttackSpeed: 0.8

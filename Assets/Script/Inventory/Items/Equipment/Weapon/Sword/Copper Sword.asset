@@ -19,3 +19,4 @@ MonoBehaviour:
   weaponType: 0
   damageBonus: 5
   attackSpeedBonus: 0.1
+  range: 2.5

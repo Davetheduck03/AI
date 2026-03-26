@@ -24,6 +24,38 @@ public class Lootable : MonoBehaviour
 	public bool isLooting = false;
 	public bool isLooted = false;
 
+	// ─── Claim system ────────────────────────────────────────────────────────
+	// Only the hero that claims this chest will walk to and loot it.
+	// Other heroes see it as unavailable in FindLootInRange.
+
+	public Transform claimedBy = null;
+
+	/// <summary>
+	/// Returns true and claims the chest if it is unclaimed (or already claimed
+	/// by <paramref name="hero"/>). Returns false if a different hero owns it.
+	/// Also clears stale claims from heroes that have been destroyed.
+	/// </summary>
+	public bool TryClaim(Transform hero)
+	{
+		// Evict a stale claim if the claimer was destroyed
+		if (claimedBy != null && (claimedBy.gameObject == null || !claimedBy.gameObject.activeInHierarchy))
+			claimedBy = null;
+
+		if (claimedBy == null || claimedBy == hero)
+		{
+			claimedBy = hero;
+			return true;
+		}
+		return false;
+	}
+
+	/// <summary>Releases the claim only if <paramref name="hero"/> currently holds it.</summary>
+	public void ReleaseClaim(Transform hero)
+	{
+		if (claimedBy == hero)
+			claimedBy = null;
+	}
+
 	// ─── Runtime Setters (called by DungeonSpawner) ─────────────────────────
 
 	public void SetLootTable(LootTable table)          => lootTable       = table;

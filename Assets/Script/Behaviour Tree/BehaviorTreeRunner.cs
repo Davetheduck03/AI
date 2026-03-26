@@ -42,6 +42,17 @@ public class BehaviorTreeRunner : MonoBehaviour
 
     private void Update()
     {
-        if (root != null) root.Evaluate();
+        if (root == null) return;
+
+        NodeState result = root.Evaluate();
+
+        // If every priority in the tree failed (no enemies, no items, no fog,
+        // no extraction) stop any lingering movement so the hero doesn't drift
+        // toward a stale destination while the BT has nothing to drive it.
+        if (result == NodeState.Failure)
+        {
+            var pf = GetComponent<UnitPathFollower>();
+            if (pf != null) pf.StopAllCoroutines();
+        }
     }
 }

@@ -14,45 +14,66 @@ public class LootTarget : Node
         Transform self = bb.Get<Transform>("self");
         Transform target = bb.Get<Transform>("target");
 
+        // Chest may have been destroyed (Unity fake-null) after loot completed
         if (self == null || target == null)
+        {
+            bb.Set("isLooting", false);
             return NodeState.Failure;
+        }
 
-        // Get lootable component
         Lootable lootable = target.GetComponent<Lootable>();
         if (lootable == null)
+        {
+            bb.Set("isLooting", false);
             return NodeState.Failure;
+        }
 
-        // Check if already looted (done)
+        // Already looted — clean up and report success
         if (lootable.isLooted)
         {
+            lootable.ReleaseClaim(self);
+            bb.Set("isLooting", false);
             Debug.Log("[LootTarget] Already looted - Success!");
             return NodeState.Success;
         }
 
-        // Check distance FIRST (before checking if looting)
+        // Distance check comes before anything else
         float distance = Vector3.Distance(self.position, target.position);
 
         if (distance > maxLootDistance)
         {
-            // Too far - cancel if looting
-            if (lootable.isLooting)
+            // Only cancel the loot animation if WE started it
+            if (lootable.isLooting && lootable.claimedBy == self)
             {
-                Debug.Log($"[LootTarget] Moved too far ({distance:F2}m) - cancelling loot");
+                Debug.Log($"[LootTarget] Moved too far ({distance:F2}m) — cancelling loot");
                 lootable.CancelLoot();
             }
+            lootable.ReleaseClaim(self);
+            bb.Set("isLooting", false);
             return NodeState.Failure;
         }
 
-        // Within range - check if already looting
+        // In range — make sure we own the claim (another hero may have claimed it
+        // while this hero was walking over, e.g. they're closer and got here first)
+        if (!lootable.TryClaim(self))
+        {
+            Debug.Log("[LootTarget] Chest already claimed by another hero — giving up.");
+            bb.Set("isLooting", false);
+            return NodeState.Failure;
+        }
+
+        // Loot animation already running (we started it a previous tick)
         if (lootable.isLooting)
         {
+            bb.Set("isLooting", true);
             Debug.Log($"[LootTarget] Looting in progress... ({distance:F2}m)");
             return NodeState.Running;
         }
 
-        // Start looting (we're in range and not looting yet)
+        // Kick off the loot animation
         Debug.Log($"[LootTarget] Starting loot at distance {distance:F2}m");
         lootable.Loot();
+        bb.Set("isLooting", true);
         return NodeState.Running;
     }
 }

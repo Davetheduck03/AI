@@ -15,6 +15,7 @@ public class AdaptiveAttack : Node
 {
     private readonly LayerMask _targetLayer;
     private readonly float     _kiteDistance;
+    private readonly LayerMask _wallLayers;
 
     // Lazily constructed — only created when the weapon type that needs them
     // is first encountered, so there is no upfront cost for units that never
@@ -28,11 +29,15 @@ public class AdaptiveAttack : Node
     /// Preferred standoff range passed to KiteAndAttack when a bow is equipped.
     /// Ignored for melee weapons.
     /// </param>
-    public AdaptiveAttack(Blackboard bb, LayerMask targetLayer, float kiteDistance = 3.5f)
+    /// <param name="wallLayers">
+    /// Layer mask for walls — used by KiteAndAttack to check LOS before firing.
+    /// </param>
+    public AdaptiveAttack(Blackboard bb, LayerMask targetLayer, float kiteDistance = 3.5f, LayerMask wallLayers = default)
         : base(bb)
     {
         _targetLayer  = targetLayer;
         _kiteDistance = kiteDistance;
+        _wallLayers   = wallLayers;
     }
 
     public override NodeState Evaluate()
@@ -46,13 +51,13 @@ public class AdaptiveAttack : Node
         if (currentType != _lastWeaponType)
         {
             Debug.Log($"[AdaptiveAttack] {self.name} switched to {currentType} " +
-                      $"→ {(IsRanged(currentType) ? "kite" : "melee")} mode");
+                      $"→ {(IsRanged(currentType) ? "kite/ranged" : "melee")} mode");
             _lastWeaponType = currentType;
         }
 
         if (IsRanged(currentType))
         {
-            _kiteNode ??= new KiteAndAttack(bb, _targetLayer, _kiteDistance);
+            _kiteNode ??= new KiteAndAttack(bb, _targetLayer, _kiteDistance, _wallLayers);
             return _kiteNode.Evaluate();
         }
         else
@@ -64,7 +69,8 @@ public class AdaptiveAttack : Node
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static bool IsRanged(WeaponType type) => type == WeaponType.Bow;
+    private static bool IsRanged(WeaponType type) =>
+        type == WeaponType.Bow || type == WeaponType.Staff;
 
     private static WeaponType GetEquippedWeaponType(Transform self)
     {
