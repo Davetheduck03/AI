@@ -14,7 +14,7 @@ using UnityEngine;
 /// • If no leader is found       → returns Failure  (hero explores independently).
 /// • If in formation position    → stops moving, returns Running (stays in sequence).
 /// • If out of position          → paths toward the formation slot, returns Running.
-/// • If stuck for too long while far from slot → returns Failure (independent explore).
+/// • If stuck for too long while far from slot → paths directly to leader, returns Running.
 /// </summary>
 public class FollowLeader : Node
 {
@@ -87,12 +87,22 @@ public class FollowLeader : Node
             _lastStuckPos   = self.position;
             _nextStuckCheck = Time.time + StuckCheckInterval;
 
-            // Stuck AND significantly out of position → give up, explore alone.
+            // Stuck AND significantly out of position → path directly to the leader
+            // instead of returning Failure. Returning Failure here drops to Explore,
+            // which also fails when there are no fog clusters, leaving the hero permanently
+            // idle. Pathing to the leader's actual position (not the formation slot)
+            // is a stronger recovery — it works even in narrow corridors.
             if (moved < StuckMoveThreshold && distToSlot > _stopRange * 3f)
             {
-                Debug.Log($"[FollowLeader] {self.name} stuck far from slot — falling back to explore.");
-                self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
-                return NodeState.Failure;
+                Debug.Log($"[FollowLeader] {self.name} stuck far from slot — pathing directly to leader.");
+                if (leader != null)
+                {
+                    if (_targetGO == null)
+                        _targetGO = new GameObject("_FollowPos") { hideFlags = HideFlags.HideAndDontSave };
+                    _targetGO.transform.position = leader.position;
+                    self.GetComponent<MovementComponent>()?.OnTriggerMove(self, _targetGO.transform);
+                    _nextMoveCheck = Time.time + MoveCheckInterval;
+                }
             }
         }
 
@@ -108,7 +118,13 @@ public class FollowLeader : Node
         // Retrigger A* on a fixed interval while out of position. The drift
         // check was removed — if a path fails silently we need to retry even
         // when the leader (and therefore the slot) hasn't moved.
-        if (Time.time >= _nextMoveCheck)
+        //
+        // URGENT override: if the hero is very far from their slot (e.g. after
+        // combat pushed them away), bypass the interval so they start chasing
+        // the leader immediately rather than waiting up to MoveCheckInterval.
+        bool urgentReposition = distToSlot > _stopRange * 3f;
+
+        if (urgentReposition || Time.time >= _nextMoveCheck)
         {
             _nextMoveCheck = Time.time + MoveCheckInterval;
 

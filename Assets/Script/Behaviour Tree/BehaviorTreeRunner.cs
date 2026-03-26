@@ -40,6 +40,16 @@ public class BehaviorTreeRunner : MonoBehaviour
         return null;  // Placeholder
     }
 
+    // How many consecutive Failure ticks must occur before we stop movement.
+    // A single Failure frame is common during BT transitions (e.g. the one frame
+    // between combat ending and the explore sequence picking a new cluster target).
+    // Stopping movement on that frame kills the newly-triggered A* path coroutine
+    // and adds a visible freeze. Requiring two consecutive failures makes the guard
+    // robust to those single-frame blips while still stopping drifting heroes when
+    // the BT genuinely has nothing to do.
+    private const int FailureStopThreshold = 2;
+    private int _consecutiveFailures = 0;
+
     private void Update()
     {
         if (root == null) return;
@@ -51,8 +61,16 @@ public class BehaviorTreeRunner : MonoBehaviour
         // toward a stale destination while the BT has nothing to drive it.
         if (result == NodeState.Failure)
         {
-            var pf = GetComponent<UnitPathFollower>();
-            if (pf != null) pf.StopAllCoroutines();
+            _consecutiveFailures++;
+            if (_consecutiveFailures >= FailureStopThreshold)
+            {
+                var pf = GetComponent<UnitPathFollower>();
+                if (pf != null) pf.StopAllCoroutines();
+            }
+        }
+        else
+        {
+            _consecutiveFailures = 0;
         }
     }
 }

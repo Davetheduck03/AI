@@ -22,9 +22,14 @@ public class HealTarget : Node
     private float     _nextMoveCheck     = 0f;
     private Vector3   _lastTriggeredPos  = Vector3.zero;
 
-    private const float MovementTimeout   = 4f;
-    private const float MoveCheckInterval = 0.5f;
+    private const float MovementTimeout      = 4f;
+    private const float MoveCheckInterval    = 0.5f;
     private const float TargetDriftThreshold = 1.5f;  // re-path if target moved this far
+    private const float RetryDelay           = 6f;    // seconds before retrying a timed-out target
+
+    // Target we gave up on, and when we're allowed to try again.
+    private Transform _blockedTarget = null;
+    private float     _retryAfter    = 0f;
 
     /// <param name="healRange">World-unit radius within which the heal cast fires.</param>
     /// <param name="targetKey">Blackboard key holding the heal target's Transform.</param>
@@ -41,6 +46,11 @@ public class HealTarget : Node
 
         // ── Guard: target must be alive ───────────────────────────────────────
         if (self == null || target == null || target.gameObject == null)
+            return NodeState.Failure;
+
+        // If we recently timed out on this exact target, don't retry yet --
+        // prevents the infinite 4-second chase loop when an ally is far away.
+        if (target == _blockedTarget && Time.time < _retryAfter)
             return NodeState.Failure;
 
         var targetHC = target.GetComponent<HealthComponent>();
@@ -82,6 +92,8 @@ public class HealTarget : Node
             {
                 Debug.Log($"[HealTarget] {self.name} timed out reaching {target.name} — giving up");
                 StopMove(self);
+                _blockedTarget = target;
+                _retryAfter    = Time.time + RetryDelay;
                 bb.Set<Transform>(_targetKey, null);
                 _lastTarget = null;
                 return NodeState.Failure;

@@ -68,9 +68,9 @@ public class HealerAI : BehaviorTreeRunner
         root.AddChild(healSeq);
 
         // ── Priority 3: FOLLOW LEADER ────────────────────────────────────────
-        // Shadow the leader so the healer remains close enough to respond quickly.
+        // No enemy guard — the healer's job is to stay near the party at all times.
+        // Blocking follow when enemies are visible just strands the healer alone.
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new NoRevealedEnemies(bb, dangerRange, wallLayers));
         followSeq.AddChild(new FollowLeader(bb, 1.5f));
         root.AddChild(followSeq);
 

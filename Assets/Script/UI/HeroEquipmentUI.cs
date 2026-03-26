@@ -43,6 +43,14 @@ public class HeroEquipmentUI : MonoBehaviour
     [Tooltip("Sprite shown when a slot has no item equipped.")]
     [SerializeField] private Sprite emptySlotSprite;
 
+    [Header("Damage Tracker")]
+    [Tooltip("(Optional) TextMeshProUGUI that shows this hero's total damage dealt. " +
+             "Leave empty to disable the damage display.")]
+    [SerializeField] private TextMeshProUGUI damageLabel;
+
+    // The hero GameObject resolved from the EquipmentComponent — used for DamageTracker lookups.
+    private GameObject _heroGO;
+
     // Cache last-known items so we only redraw when something actually changes
     private ItemSO _lastWeapon;
     private ItemSO _lastHead;
@@ -85,6 +93,15 @@ public class HeroEquipmentUI : MonoBehaviour
             _lastRelic = heroEquipment.equippedRelic;
             RefreshSlot(relicIcon, relicName, _lastRelic);
         }
+
+        // Live damage total — poll DamageTracker every frame (cheap dictionary lookup).
+        if (damageLabel != null && _heroGO != null)
+        {
+            float total = DamageTracker.Instance != null
+                ? DamageTracker.Instance.GetTotal(_heroGO)
+                : 0f;
+            damageLabel.text = $"DMG  {total:N0}";
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -98,9 +115,14 @@ public class HeroEquipmentUI : MonoBehaviour
     public void SetHero(EquipmentComponent equipment, int index)
     {
         heroEquipment = equipment;
+        _heroGO       = equipment != null ? equipment.gameObject : null;
 
         if (playerLabel != null)
             playerLabel.text = $"Player {index + 1}";
+
+        // Reset damage label immediately so stale numbers don't linger between runs.
+        if (damageLabel != null)
+            damageLabel.text = "DMG  0";
 
         RefreshAll();
     }

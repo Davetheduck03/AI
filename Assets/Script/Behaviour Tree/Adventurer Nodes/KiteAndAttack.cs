@@ -30,6 +30,11 @@ public class KiteAndAttack : Node
 	// Calling OnTriggerMove every frame would spam A* — throttle it.
 	private const float MoveRetriggerInterval = 0.5f;
 
+	// Give up chasing if we haven't closed in after this many seconds.
+	// Prevents the unit from locking onto an unreachable enemy indefinitely.
+	private const float ClosingTimeout     = 8f;
+	private float       _closingStartTime  = float.MaxValue;
+
 	// ── State ─────────────────────────────────────────────────────────────────
 
 	private enum CombatState { Closing, Strafing, Retreating }
@@ -74,7 +79,11 @@ public class KiteAndAttack : Node
 		// the blackboard has a fresh enemy (set by FindNearestRevealedEnemy).
 		Transform bbEnemy = bb.Get<Transform>("target");
 		if (bbEnemy != null && bbEnemy != _moveTargetGO?.transform)
-			_enemy = bbEnemy;   // real enemy — accept it
+		{
+			if (bbEnemy != _enemy)          // brand new target — reset closing timer
+				_closingStartTime = Time.time;
+			_enemy = bbEnemy;               // real enemy — accept it
+		}
 
 		if (self == null || _enemy == null || _enemy.gameObject == null)
 		{
@@ -102,6 +111,10 @@ public class KiteAndAttack : Node
 		{
 			_state = newState;
 			_nextMoveRetrigger = 0f;   // force immediate move on state change
+			if (_state == CombatState.Closing)
+				_closingStartTime = Time.time;  // start timeout when we enter Closing
+			if (_state == CombatState.Strafing || _state == CombatState.Retreating)
+				_closingStartTime = float.MaxValue;  // reached the enemy, cancel timer
 			if (_state == CombatState.Retreating)
 			{
 				_lastCheckedPos = self.position;
@@ -113,6 +126,14 @@ public class KiteAndAttack : Node
 		switch (_state)
 		{
 			case CombatState.Closing:
+				// Give up if we've been closing for too long without reaching attack range.
+				// This happens when the enemy is behind a wall or too far to path to.
+				if (Time.time - _closingStartTime > ClosingTimeout)
+				{
+					Debug.Log($"[KiteAndAttack] {self.name} timed out closing on {_enemy?.name} — giving up");
+					Cleanup(self);
+					return NodeState.Failure;
+				}
 				if (Time.time >= _nextMoveRetrigger)
 				{
 					TriggerMove(self, _enemy.position);
@@ -147,10 +168,16 @@ public class KiteAndAttack : Node
 		{
 			// Cache name before damage (the GO may be destroyed inside TryDealDamage)
 			string enemyName = _enemy.name;
-			damageComp.TryDealDamage(_enemy.gameObject);
+
+			// AoE units (e.g. Mage) blast everything around them; single-target units hit only the enemy.
+			if (damageComp.IsAoE)
+				damageComp.TryDealDamage(_enemy.gameObject, self.position, _targetLayer);
+			else
+				damageComp.TryDealDamage(_enemy.gameObject);
+
 			_lastAttackTime = Time.time;
 			Debug.Log($"[KiteAndAttack] {self.name} hit {enemyName} " +
-					  $"dist={dist:F2} state={_state}");
+					  $"dist={dist:F2} state={_state} aoe={damageComp.IsAoE}");
 
 			// If the enemy died from this hit, clean up immediately so the retreat/
 			// strafe movement coroutine stops and bb["target"] is cleared.

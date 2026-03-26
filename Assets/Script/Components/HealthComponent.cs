@@ -6,6 +6,14 @@ public class HealthComponent : UnitComponent
     /// <summary>Fired just before the owning GameObject is destroyed. Used by BaseHero to trigger the lose state.</summary>
     public static event Action<HealthComponent> OnDeath;
 
+    /// <summary>
+    /// Fired whenever a unit takes damage.
+    /// Parameters: (damageDealer, finalDamage) — damageDealer is the source GameObject
+    /// (may be null if the source is unknown), finalDamage is the post-armour amount.
+    /// Consumed by DamageTracker to accumulate per-hero totals.
+    /// </summary>
+    public static event Action<GameObject, float> OnDamageDealt;
+
     // Optional flash effect — present on units that have a SpriteRenderer.
     private HitFlashEffect _flash;
 
@@ -59,6 +67,9 @@ public class HealthComponent : UnitComponent
                   $"HP: {currentHealth:F1}/{maxHealth}");
 
         _flash?.FlashDamage();
+
+        // Notify the damage tracker (and any other listeners) about this hit.
+        OnDamageDealt?.Invoke(data.damageDealer, finalDamage);
 
         if (currentHealth <= 0)
             Die();
