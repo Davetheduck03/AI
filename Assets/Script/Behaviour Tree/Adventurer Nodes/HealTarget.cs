@@ -22,10 +22,10 @@ public class HealTarget : Node
     private float     _nextMoveCheck     = 0f;
     private Vector3   _lastTriggeredPos  = Vector3.zero;
 
-    private const float MovementTimeout      = 4f;
-    private const float MoveCheckInterval    = 0.5f;
-    private const float TargetDriftThreshold = 1.5f;  // re-path if target moved this far
-    private const float RetryDelay           = 6f;    // seconds before retrying a timed-out target
+    private const float MovementTimeout      = 6f;
+    private const float MoveCheckInterval    = 0.3f;
+    private const float TargetDriftThreshold = 0.6f;  // re-path if target moved this far
+    private const float RetryDelay           = 3f;    // seconds before retrying a timed-out target
 
     // Target we gave up on, and when we're allowed to try again.
     private Transform _blockedTarget = null;

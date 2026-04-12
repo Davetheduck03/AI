@@ -17,7 +17,7 @@ public class ArcherAI : BehaviorTreeRunner
 
     [Header("Kiting (when bow equipped)")]
     [Tooltip("Preferred standoff distance. Clamped to attackRange - 0.3 automatically.")]
-    [SerializeField] private float kiteDistance = 3.5f;
+    [SerializeField] private float kiteDistance = 5.0f;
 
     protected override void Start()
     {
@@ -65,9 +65,11 @@ public class ArcherAI : BehaviorTreeRunner
         root.AddChild(worldItemSeq);
 
         // ── Priority 5: FOLLOW LEADER (followers only) ───────────────────────
+        // No NoRevealedEnemies guard here — attack is already Priority 1, so if the
+        // attack sequence fails for any reason (e.g. enemy unreachable / gave-up
+        // cooldown active) the hero should still be able to rejoin the group.
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
-        followSeq.AddChild(new FollowLeader(bb, 1.5f));
+        followSeq.AddChild(new FollowLeader(bb, 0.7f));
         root.AddChild(followSeq);
 
         // ── Priority 6: EXPLORE (leader + fallback for all) ──────────────────

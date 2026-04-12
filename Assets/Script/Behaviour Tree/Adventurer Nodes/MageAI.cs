@@ -21,7 +21,7 @@ public class MageAI : BehaviorTreeRunner
 
     [Header("Kiting")]
     [Tooltip("Preferred standoff distance. Clamped to attackRange - 0.3 automatically.")]
-    [SerializeField] private float kiteDistance = 3.0f;
+    [SerializeField] private float kiteDistance = 3.8f;
 
     protected override void Start()
     {
@@ -65,8 +65,7 @@ public class MageAI : BehaviorTreeRunner
 
         // ── Priority 4: FOLLOW LEADER (followers only) ───────────────────────
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
-        followSeq.AddChild(new FollowLeader(bb, 1.5f));
+        followSeq.AddChild(new FollowLeader(bb, 0.7f));
         root.AddChild(followSeq);
 
         // ── Priority 5: EXPLORE (leader + fallback for all) ──────────────────

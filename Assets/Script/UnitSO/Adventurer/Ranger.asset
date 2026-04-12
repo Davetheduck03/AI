@@ -22,6 +22,6 @@ MonoBehaviour:
   baseAttackSpeed: 1
   armor: 0
   adventurerClass: {fileID: 11400000, guid: 1199131efb6ab3b489e930c9e6c9fe52, type: 2}
-  range: 2.5
+  range: 7
   isAoE: 0
   projectileSpeed: 0

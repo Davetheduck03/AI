@@ -13,6 +13,15 @@ public class BaseHero : BaseUnit
     /// </summary>
     [HideInInspector] public int playerIndex = 0;
 
+    private void Start()
+    {
+        // Ensure every hero has separation behaviour regardless of prefab setup.
+        // Using Start() rather than Awake() so BaseUnit.Awake() (which initialises
+        // all UnitComponents) is guaranteed to have run first.
+        if (GetComponent<SeparationBehavior>() == null)
+            gameObject.AddComponent<SeparationBehavior>();
+    }
+
     private void OnEnable()
     {
         HealthComponent.OnDeath += HandleDeath;

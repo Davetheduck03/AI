@@ -35,6 +35,14 @@ public class KiteAndAttack : Node
 	private const float ClosingTimeout     = 8f;
 	private float       _closingStartTime  = float.MaxValue;
 
+	// After timing out on an enemy, ignore that specific enemy for this long so
+	// the behaviour tree can fall through to FollowLeader and catch up with the team.
+	// Without this, FindNearestRevealedEnemy re-targets the same enemy the very next
+	// tick and the archer is trapped in an 8-second chase loop forever.
+	private const float GaveUpCooldown = 12f;
+	private Transform   _gaveUpEnemy   = null;
+	private float       _gaveUpTime    = float.MinValue;
+
 	// ── State ─────────────────────────────────────────────────────────────────
 
 	private enum CombatState { Closing, Strafing, Retreating }
@@ -80,6 +88,11 @@ public class KiteAndAttack : Node
 		Transform bbEnemy = bb.Get<Transform>("target");
 		if (bbEnemy != null && bbEnemy != _moveTargetGO?.transform)
 		{
+			// If we recently timed out trying to reach this specific enemy, ignore it
+			// for the cooldown period so the BT can fall through to FollowLeader.
+			if (bbEnemy == _gaveUpEnemy && Time.time - _gaveUpTime < GaveUpCooldown)
+				return NodeState.Failure;
+
 			if (bbEnemy != _enemy)          // brand new target — reset closing timer
 				_closingStartTime = Time.time;
 			_enemy = bbEnemy;               // real enemy — accept it
@@ -131,6 +144,10 @@ public class KiteAndAttack : Node
 				if (Time.time - _closingStartTime > ClosingTimeout)
 				{
 					Debug.Log($"[KiteAndAttack] {self.name} timed out closing on {_enemy?.name} — giving up");
+					// Blacklist this enemy so FindNearestRevealedEnemy can't immediately
+					// re-target it next tick, which would restart the chase loop.
+					_gaveUpEnemy = _enemy;
+					_gaveUpTime  = Time.time;
 					Cleanup(self);
 					return NodeState.Failure;
 				}

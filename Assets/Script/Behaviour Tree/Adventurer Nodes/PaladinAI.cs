@@ -100,8 +100,7 @@ public class PaladinAI : BehaviorTreeRunner
 
         // ── Priority 6: FOLLOW LEADER (followers only) ───────────────────────
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
-        followSeq.AddChild(new FollowLeader(bb, 1.5f));
+        followSeq.AddChild(new FollowLeader(bb, 0.7f));
         root.AddChild(followSeq);
 
         // ── Priority 7: EXPLORE (leader + fallback for all) ──────────────────

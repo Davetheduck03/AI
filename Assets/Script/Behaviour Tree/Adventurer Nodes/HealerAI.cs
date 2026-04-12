@@ -30,7 +30,7 @@ public class HealerAI : BehaviorTreeRunner
     [SerializeField] private float healSearchRange = 14f;
 
     [Tooltip("World-unit radius the healer must be within before casting.")]
-    [SerializeField] private float healRange = 2.5f;
+    [SerializeField] private float healRange = 4.0f;
 
     [Header("Self-preservation")]
     [Tooltip("Enemy detection radius used for the enemy guards on normal healing / follow / explore.")]
@@ -60,9 +60,10 @@ public class HealerAI : BehaviorTreeRunner
         root.AddChild(healCritSeq);
 
         // ── Priority 2: HEAL INJURED ALLY ────────────────────────────────────
-        // Only heal non-critically when enemies aren't immediately threatening.
+        // No enemy guard — the healer's job is to keep allies alive, including
+        // during combat. Gating this on NoRevealedEnemies meant the healer did
+        // nothing until someone was nearly dead (critical threshold).
         var healSeq = new Sequence(bb);
-        healSeq.AddChild(new NoRevealedEnemies(bb, dangerRange, wallLayers));
         healSeq.AddChild(new FindInjuredAlly(bb, healThreshold, healSearchRange, "healTarget"));
         healSeq.AddChild(new HealTarget(bb, healRange, "healTarget"));
         root.AddChild(healSeq);
@@ -71,7 +72,7 @@ public class HealerAI : BehaviorTreeRunner
         // No enemy guard — the healer's job is to stay near the party at all times.
         // Blocking follow when enemies are visible just strands the healer alone.
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new FollowLeader(bb, 1.5f));
+        followSeq.AddChild(new FollowLeader(bb, 0.7f));
         root.AddChild(followSeq);
 
         // ── Priority 4: EXPLORE (fallback if this healer is somehow the leader) ─

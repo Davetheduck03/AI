@@ -38,14 +38,14 @@ public class FormationManager : MonoBehaviour
     };
     private static readonly Vector2[] Follow3 = {
         new Vector2(  0f,   0f),   // slot 0: leader
-        new Vector2(-1.5f, -0.7f), // slot 1: behind-left
-        new Vector2(-1.5f,  0.7f), // slot 2: behind-right
+        new Vector2(-1.2f,  0.4f), // slot 1: behind-right
+        new Vector2(-2.0f, -0.4f), // slot 2: further behind-left
     };
     private static readonly Vector2[] Follow4 = {
         new Vector2(  0f,   0f),   // slot 0: leader
-        new Vector2(-0.2f,  0.9f), // slot 1: beside-right (melee partner)
-        new Vector2(-2.0f, -0.6f), // slot 2: back-left (ranged)
-        new Vector2(-2.0f,  0.6f), // slot 3: back-right (ranged)
+        new Vector2(-1.2f,  0.4f), // slot 1: behind-right
+        new Vector2(-2.0f, -0.4f), // slot 2: further behind-left
+        new Vector2(-2.8f,  0.4f), // slot 3: furthest behind-right
     };
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -53,11 +53,19 @@ public class FormationManager : MonoBehaviour
     private List<Transform>            _heroes  = new List<Transform>();
     private Dictionary<Transform, int> _slotMap = new Dictionary<Transform, int>();
 
-    // Cached leader movement direction — updated every frame from the leader's
-    // position delta so followers know which way "forward" is.
+    // Cached leader facing direction.
+    // Priority: nearest visible enemy direction > leader movement direction.
+    // This keeps followers behind the leader relative to the threat at all times,
+    // even when the party is standing still.
     private Vector3 _leaderForward  = Vector3.right;
     private Vector3 _lastLeaderPos  = Vector3.zero;
     private bool    _leaderPosValid = false;
+
+    // Throttle the enemy scan — no need to run FindGameObjectsWithTag every frame.
+    private FogOfWarManager _fogManager;
+    private float   _nextEnemyDirCheck  = 0f;
+    private Vector3 _cachedEnemyDir     = Vector3.zero;   // zero = no visible enemy
+    private const float EnemyDirInterval = 0.25f;
 
     private float _nextRefresh = 0f;
     private const float RefreshInterval = 3f;
@@ -67,6 +75,7 @@ public class FormationManager : MonoBehaviour
     private void Awake()
     {
         Instance = this;
+        _fogManager = Object.FindAnyObjectByType<FogOfWarManager>();
         DungeonSpawner.OnPartySpawned += OnPartySpawned;
         HealthComponent.OnDeath       += OnUnitDied;
     }
@@ -87,12 +96,24 @@ public class FormationManager : MonoBehaviour
             RefreshSlots();
         }
 
-        // Track the leader's movement direction so followers orient correctly.
+        // Scan for visible enemies periodically (cheaper than every frame).
+        if (Time.time >= _nextEnemyDirCheck)
+        {
+            _nextEnemyDirCheck = Time.time + EnemyDirInterval;
+            _cachedEnemyDir    = GetNearestVisibleEnemyDir();
+        }
+
         Transform leader = GetLeader();
         if (leader != null)
         {
-            if (_leaderPosValid)
+            if (_cachedEnemyDir != Vector3.zero)
             {
+                // Enemies are visible — face the threat so followers shelter behind the leader.
+                _leaderForward = _cachedEnemyDir;
+            }
+            else if (_leaderPosValid)
+            {
+                // No visible enemies — track the leader's movement direction as before.
                 Vector3 delta = leader.position - _lastLeaderPos;
                 if (delta.sqrMagnitude > 0.0001f)
                     _leaderForward = delta.normalized;
@@ -104,6 +125,37 @@ public class FormationManager : MonoBehaviour
         {
             _leaderPosValid = false;
         }
+    }
+
+    /// <summary>
+    /// Returns the normalised direction from the leader toward the nearest revealed
+    /// (non-fog) enemy, or Vector3.zero if no enemies are currently visible.
+    /// </summary>
+    private Vector3 GetNearestVisibleEnemyDir()
+    {
+        Transform leader = GetLeader();
+        if (leader == null) return Vector3.zero;
+
+        GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
+        Transform nearest    = null;
+        float     closestSq  = float.MaxValue;
+
+        foreach (GameObject enemyObj in enemies)
+        {
+            if (enemyObj == null) continue;
+            if (_fogManager != null && !_fogManager.IsRevealed(enemyObj.transform.position))
+                continue;
+
+            float sq = (enemyObj.transform.position - leader.position).sqrMagnitude;
+            if (sq < closestSq)
+            {
+                closestSq = sq;
+                nearest   = enemyObj.transform;
+            }
+        }
+
+        if (nearest == null) return Vector3.zero;
+        return (nearest.position - leader.position).normalized;
     }
 
     // ── Event handlers ────────────────────────────────────────────────────────
@@ -154,6 +206,9 @@ public class FormationManager : MonoBehaviour
     public bool IsLeader(Transform hero) =>
         _slotMap.TryGetValue(hero, out int slot) && slot == 0;
 
+    /// <summary>The direction the leader is currently considered to be facing.</summary>
+    public Vector3 GetLeaderForward() => _leaderForward;
+
     /// <summary>Returns the current leader Transform, or null if none.</summary>
     public Transform GetLeader()
     {
@@ -202,17 +257,38 @@ public class FormationManager : MonoBehaviour
         if (leader == null || !_slotMap.TryGetValue(follower, out int slot))
             return follower != null ? follower.position : Vector3.zero;
 
-        return leader.position + (-_leaderForward) * (slot * 1.5f);
+        // Use the same longitudinal depth as the normal slot table but with no lateral
+        // offset, so the corridor fallback stays consistent with the normal formation depth.
+        Vector2[] fallbackTable = _heroes.Count switch
+        {
+            1 => Follow1,
+            2 => Follow2,
+            3 => Follow3,
+            _ => Follow4,
+        };
+        slot = Mathf.Clamp(slot, 0, fallbackTable.Length - 1);
+        float depth = Mathf.Abs(fallbackTable[slot].x);
+        return leader.position + (-_leaderForward) * depth;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /// <summary>0 = melee/front, 1 = ranged/back (Bow or Staff).</summary>
+    /// <summary>
+    /// Slot ordering priority (lower = closer to front):
+    ///   0 — melee (sword, etc.)   → lead the group, absorb hits
+    ///   1 — healer (staff + HealerAI) → stay close behind melee so heal range reaches
+    ///   2 — mage  (staff, no heal)    → mid-back
+    ///   3 — archer (bow)              → furthest back, safe kiting distance
+    /// </summary>
     private static int RolePriority(Transform hero)
     {
         var eq = hero.GetComponent<EquipmentComponent>();
         var wt = eq?.equippedWeapon?.weaponType;
-        return (wt == WeaponType.Bow || wt == WeaponType.Staff) ? 1 : 0;
+
+        if (wt == WeaponType.Bow)   return 3;  // archer — furthest back
+        if (wt == WeaponType.Staff)
+            return hero.GetComponent<HealerAI>() != null ? 1 : 2;  // healer closer, mage further
+        return 0;  // melee — front
     }
 
     private static float MaxHealth(Transform hero) =>

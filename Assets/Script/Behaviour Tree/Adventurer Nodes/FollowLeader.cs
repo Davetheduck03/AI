@@ -23,10 +23,16 @@ public class FollowLeader : Node
     // Reusable hidden GO used as the A* movement destination.
     private GameObject _targetGO;
 
-    // Throttle A* calls — retrigger every interval while out of position,
-    // regardless of whether the slot has drifted (path may have failed silently).
-    private float _nextMoveCheck    = 0f;
-    private const float MoveCheckInterval = 0.6f;
+    // Only retrigger A* when the slot target has actually moved this far from
+    // the last position we pathed to, OR when the periodic timer fires.
+    // This prevents the janky stop-start from restarting paths every frame.
+    private Vector3 _lastPathedTo      = new Vector3(float.MaxValue, 0f, 0f);
+    private float   _nextMoveCheck     = 0f;
+    private const float MoveCheckInterval   = 1.0f;
+    private const float SlotDriftThreshold  = 0.8f;
+
+    // Prevent spamming StopAllCoroutines every tick while "in position".
+    private bool _arrivedAtSlot = false;
 
     // If snapping the formation slot to the nearest walkable tile moves it more than
     // this distance, the slot is inside a wall. Switch to the corridor fallback instead.
@@ -39,7 +45,7 @@ public class FollowLeader : Node
     private const float StuckCheckInterval  = 3f;
     private const float StuckMoveThreshold  = 0.4f;
 
-    public FollowLeader(Blackboard bb, float stopRange = 1.5f) : base(bb)
+    public FollowLeader(Blackboard bb, float stopRange = 0.7f) : base(bb)
     {
         _stopRange = stopRange;
     }
@@ -59,6 +65,22 @@ public class FollowLeader : Node
         Transform leader = fm.GetLeader();
         if (leader == null) return NodeState.Failure;  // no leader → explore freely
 
+        // ── Yield if ahead of the leader ─────────────────────────────────────
+        // When the leader changes direction the slot flips to the other side.
+        // A follower that is currently AHEAD of the leader in its facing direction
+        // would have to path straight through the leader to reach the new slot,
+        // physically blocking it in narrow corridors. Instead, stop and wait for
+        // the leader to walk past, then resume normal following from behind.
+        Vector3 leaderFwd      = fm.GetLeaderForward();
+        float   forwardOffset  = Vector3.Dot(self.position - leader.position, leaderFwd);
+        if (forwardOffset > 0.5f)
+        {
+            self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
+            _arrivedAtSlot = false;   // reset so we re-trigger movement once behind
+            _lastPathedTo  = new Vector3(float.MaxValue, 0f, 0f);
+            return NodeState.Running;
+        }
+
         Vector3 formPos = fm.GetFollowPosition(self);
 
         // Resolve to a walkable tile. If the snap moves the goal further than
@@ -77,6 +99,11 @@ public class FollowLeader : Node
         {
             formPos = resolvedNode.transform.position;
         }
+
+        // If no walkable tile could be found for this formation slot (e.g. spawn room
+        // is too small, or the leader's direction hasn't been established yet), fall
+        // through to Explore rather than returning Running and freezing the hero.
+        if (resolvedNode == null) return NodeState.Failure;
 
         float distToSlot = Vector3.Distance(self.position, formPos);
 
@@ -109,34 +136,34 @@ public class FollowLeader : Node
         // ── Already in position ──────────────────────────────────────────────
         if (distToSlot <= _stopRange)
         {
-            // Stop drifting, wait for the leader to move again.
-            self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
+            if (!_arrivedAtSlot)
+            {
+                // Stop any lingering movement exactly once when we arrive.
+                _arrivedAtSlot = true;
+                self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
+            }
             return NodeState.Running;
         }
+        _arrivedAtSlot = false;
 
         // ── Move toward formation slot ───────────────────────────────────────
-        // Retrigger A* on a fixed interval while out of position. The drift
-        // check was removed — if a path fails silently we need to retry even
-        // when the leader (and therefore the slot) hasn't moved.
+        // Retrigger A* only when the slot target has drifted significantly from
+        // where we last pathed (leader moved, so slot moved), OR when the periodic
+        // timer fires to recover from silent path failures.
         //
-        // URGENT override: if the hero is very far from their slot (e.g. after
-        // combat pushed them away), bypass the interval so they start chasing
-        // the leader immediately rather than waiting up to MoveCheckInterval.
-        bool urgentReposition = distToSlot > _stopRange * 3f;
+        // Do NOT bypass the timer unconditionally when far from the slot — that was
+        // the source of jankiness: calling OnTriggerMove every frame restarted the
+        // A* coroutine before it could complete, causing constant stop-start movement.
+        bool slotDrifted = Vector3.Distance(formPos, _lastPathedTo) > SlotDriftThreshold;
 
-        if (urgentReposition || Time.time >= _nextMoveCheck)
+        if (slotDrifted || Time.time >= _nextMoveCheck)
         {
             _nextMoveCheck = Time.time + MoveCheckInterval;
+            _lastPathedTo  = formPos;
 
             if (_targetGO == null)
-            {
-                _targetGO = new GameObject("_FollowPos")
-                {
-                    hideFlags = HideFlags.HideAndDontSave
-                };
-            }
+                _targetGO = new GameObject("_FollowPos") { hideFlags = HideFlags.HideAndDontSave };
 
-            // formPos is already resolved to a walkable tile above (wall-snap + fallback).
             _targetGO.transform.position = formPos;
             self.GetComponent<MovementComponent>()?.OnTriggerMove(self, _targetGO.transform);
         }

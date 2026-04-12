@@ -65,8 +65,7 @@ public class KnightAI : BehaviorTreeRunner
         // Leaders return Failure from FollowLeader and fall through to Explore.
         // If the leader dies, followers also fall through to Explore (independent).
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
-        followSeq.AddChild(new FollowLeader(bb, 1.5f));
+        followSeq.AddChild(new FollowLeader(bb, 0.7f));
         root.AddChild(followSeq);
 
         // ── Priority 5: EXPLORE (leader + fallback for all) ──────────────────
