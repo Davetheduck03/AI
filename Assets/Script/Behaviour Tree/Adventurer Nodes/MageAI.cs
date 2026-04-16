@@ -50,7 +50,6 @@ public class MageAI : BehaviorTreeRunner
         var lootSeq = new Sequence(bb);
         lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         lootSeq.AddChild(new FindLootInRange(bb, 10f));
-        lootSeq.AddChild(new IsTargetRevealed(bb));
         lootSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         lootSeq.AddChild(new LootTarget(bb));
         root.AddChild(lootSeq);

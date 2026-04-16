@@ -71,9 +71,14 @@ public class FollowLeader : Node
         // would have to path straight through the leader to reach the new slot,
         // physically blocking it in narrow corridors. Instead, stop and wait for
         // the leader to walk past, then resume normal following from behind.
+        // Only apply this when close to the leader — if the follower has fallen
+        // far behind, the leader's facing direction (e.g. toward an enemy that is
+        // also behind the leader) can incorrectly classify the follower as "ahead"
+        // and freeze it permanently.
         Vector3 leaderFwd      = fm.GetLeaderForward();
         float   forwardOffset  = Vector3.Dot(self.position - leader.position, leaderFwd);
-        if (forwardOffset > 0.5f)
+        float   distToLeader   = Vector3.Distance(self.position, leader.position);
+        if (forwardOffset > 0.5f && distToLeader < 3f)
         {
             self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
             _arrivedAtSlot = false;   // reset so we re-trigger movement once behind
