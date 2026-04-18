@@ -10,20 +10,54 @@ public class UnitPathFollower : MonoBehaviour
 
     private bool _nodeListenerActive = false;
 
-    // How long to wait for a blocker to move before pushing through.
-    private const float BlockWaitTime = 0.4f;
-    private const float BlockPushThrough = 1.2f;   // give up waiting after this long total
+    /// <summary>
+    /// True while a FollowPath coroutine is actively running.
+    /// External systems (e.g. FollowLeader) can read this to avoid
+    /// restarting a perfectly good path unnecessarily.
+    /// </summary>
+    public bool IsFollowingPath { get; private set; }
+
+    /// <summary>
+    /// Stops the active path coroutine and clears <see cref="IsFollowingPath"/>.
+    /// Prefer this over calling StopAllCoroutines() directly so the flag stays accurate.
+    /// </summary>
+    public void StopPath()
+    {
+        IsFollowingPath = false;
+        if (gameObject != null && gameObject.activeInHierarchy)
+            StopAllCoroutines();
+    }
+
+    // How long to wait for a blocker to move before pushing through (high-priority hero).
+    private const float BlockWaitTime   = 0.3f;
+    private const float BlockPushThrough = 0.9f;   // give up waiting after this long total
+
+    // Low-priority (yielding) hero: poll this often while waiting for the tile to clear.
+    private const float YieldPollInterval = 0.2f;
+    private const float MaxYieldTime      = 3.0f;   // give up yielding after this long
+
+    // Path smoothing + corner lookahead.
+    // Heroes start curving toward the next waypoint when within this distance of the current one.
+    private const float LookAheadDist = 0.8f;
+
+    // Ally avoidance steering.
+    // Heroes within AvoidRadius that are roughly ahead get a lateral steer applied.
+    private const float AvoidRadius   = 1.1f;
+    private const float AvoidStrength = 0.8f;
 
     public void SetPath(List<PathNode> newPath, float moveSpeed, MovementComponent mc = null)
     {
         if (this == null || !this) return;
 
-        path = newPath;
+        path = SmoothenPath(newPath);
         currentIndex = 0;
         movementComp = mc;
 
         if (gameObject != null && gameObject.activeInHierarchy)
+        {
+            IsFollowingPath = false;
             StopAllCoroutines();
+        }
 
         if (path != null && path.Count > 0)
         {
@@ -77,6 +111,8 @@ public class UnitPathFollower : MonoBehaviour
 
     private IEnumerator FollowPath(float moveSpeed)
     {
+        IsFollowingPath = true;
+
         // Stagger start slightly based on instance ID so units that spawn
         // simultaneously don't all request paths on the exact same frame.
         float stagger = (gameObject.GetInstanceID() & 0xF) * 0.02f;
@@ -92,64 +128,118 @@ public class UnitPathFollower : MonoBehaviour
             if (targetNode == null || !targetNode)
             {
                 Debug.Log("UnitPathFollower: path node destroyed (grid regen) — stopping.");
+                IsFollowingPath = false;
                 UnsubscribeNodeListener();
                 yield break;
             }
 
             if (!targetNode.isWalkable)
             {
+                IsFollowingPath = false;
                 RecalculatePath(path[path.Count - 1]);
                 yield break;
             }
 
             Vector2 targetPos = (Vector2)targetNode.transform.position;
-            const float tolerance = 0.25f;
+            const float tolerance = 0.4f;
 
             // ── Blocker handling before we start moving toward this node ──────
-            // If another unit is already standing on the target tile, wait up to
-            // BlockPushThrough seconds for them to leave.  After that, push through
-            // (move to the tile anyway) instead of re-pathing endlessly — this
-            // breaks the corridor deadlock where two units repath into each other.
-            if (IsBlockedByUnit(targetNode))
+            // Priority is determined by instance ID: lower ID = higher priority.
+            //
+            // HIGH-PRIORITY hero (lower instance ID than the blocker):
+            //   Wait up to BlockPushThrough seconds for the blocker to move.
+            //   If they don't, try one repath then push through to break deadlock.
+            //
+            // LOW-PRIORITY hero (higher instance ID than the blocker):
+            //   Yield — stop and poll until the tile clears, giving the high-priority
+            //   hero right-of-way.  After MaxYieldTime, repath to find another route.
+            //   This asymmetric behaviour prevents both heroes from retriggering A*
+            //   simultaneously into each other, which was the corridor deadlock.
+            Collider2D blockerCol = GetBlockerCollider(targetNode);
+            if (blockerCol != null)
             {
-                float waitedFor = 0f;
-                bool pushedThrough = false;
+                bool isHighPriority = gameObject.GetInstanceID() < blockerCol.gameObject.GetInstanceID();
 
-                while (IsBlockedByUnit(targetNode))
+                if (isHighPriority)
                 {
-                    if (targetNode == null || !targetNode)
-                    {
-                        UnsubscribeNodeListener();
-                        yield break;
-                    }
+                    // ── High-priority: short wait then push through ─────────────
+                    float waitedFor   = 0f;
+                    bool  pushedThrough = false;
 
-                    yield return new WaitForSeconds(BlockWaitTime);
-                    waitedFor += BlockWaitTime;
-
-                    if (waitedFor >= BlockPushThrough)
+                    while (GetBlockerCollider(targetNode) != null)
                     {
-                        // Blocker hasn't moved — try a one-shot repath first.
-                        // If the repath produces a different next node we'll take
-                        // it; if not, just push through to avoid deadlock.
-                        PathNode goal = path[path.Count - 1];
-                        if (goal != null && goal && goal != targetNode)
+                        if (targetNode == null || !targetNode)
                         {
-                            RecalculatePath(goal);
+                            IsFollowingPath = false;
+                            UnsubscribeNodeListener();
                             yield break;
                         }
 
-                        // No better path — push through.
-                        Debug.Log($"[UnitPathFollower] {name} pushing through blocker on {targetNode.name}");
-                        pushedThrough = true;
-                        break;
+                        yield return new WaitForSeconds(BlockWaitTime);
+                        waitedFor += BlockWaitTime;
+
+                        if (waitedFor >= BlockPushThrough)
+                        {
+                            // Try a one-shot repath first; if no better route, push through.
+                            PathNode goal = path[path.Count - 1];
+                            if (goal != null && goal && goal != targetNode)
+                            {
+                                IsFollowingPath = false;
+                                RecalculatePath(goal);
+                                yield break;
+                            }
+
+                            Debug.Log($"[UnitPathFollower] {name} pushing through blocker on {targetNode.name}");
+                            pushedThrough = true;
+                            break;
+                        }
+                    }
+
+                    if (!pushedThrough && (targetNode == null || !targetNode))
+                    {
+                        IsFollowingPath = false;
+                        UnsubscribeNodeListener();
+                        yield break;
                     }
                 }
-
-                // Node may have been destroyed while we were waiting.
-                if (!pushedThrough && (targetNode == null || !targetNode))
+                else
                 {
-                    UnsubscribeNodeListener();
-                    yield break;
+                    // ── Low-priority: yield, giving right-of-way ───────────────
+                    // Poll until the tile is clear or we hit MaxYieldTime, then repath.
+                    float yieldedFor = 0f;
+                    bool  tileCleared = false;
+
+                    while (yieldedFor < MaxYieldTime)
+                    {
+                        if (targetNode == null || !targetNode)
+                        {
+                            IsFollowingPath = false;
+                            UnsubscribeNodeListener();
+                            yield break;
+                        }
+
+                        yield return new WaitForSeconds(YieldPollInterval);
+                        yieldedFor += YieldPollInterval;
+
+                        if (GetBlockerCollider(targetNode) == null)
+                        {
+                            tileCleared = true;
+                            break;
+                        }
+                    }
+
+                    if (!tileCleared)
+                    {
+                        // Blocker is still there — repath around them.
+                        PathNode goal = path[path.Count - 1];
+                        if (goal != null && goal && goal != targetNode)
+                        {
+                            Debug.Log($"[UnitPathFollower] {name} yielded {yieldedFor:F1}s — repathing around blocker");
+                            IsFollowingPath = false;
+                            RecalculatePath(goal);
+                            yield break;
+                        }
+                    }
                 }
             }
 
@@ -159,12 +249,38 @@ public class UnitPathFollower : MonoBehaviour
                 if (targetNode == null || !targetNode)
                 {
                     Debug.Log("UnitPathFollower: node destroyed mid-move — stopping.");
+                    IsFollowingPath = false;
                     UnsubscribeNodeListener();
                     yield break;
                 }
 
                 Vector2 currentPos = (Vector2)transform.position;
-                Vector2 direction = (targetPos - currentPos).normalized;
+
+                // ── Corner lookahead ──────────────────────────────────────────
+                // When close to the current waypoint, blend the aim point toward
+                // the next one.  This pre-curves the direction so the hero rounds
+                // corners smoothly rather than hard-pivoting exactly at each node.
+                Vector2 lookaheadTarget = targetPos;
+                if (currentIndex + 1 < path.Count &&
+                    path[currentIndex + 1] != null && path[currentIndex + 1])
+                {
+                    float distToNode = Vector2.Distance(currentPos, targetPos);
+                    if (distToNode < LookAheadDist)
+                    {
+                        float blend = (1f - distToNode / LookAheadDist) * 0.55f;
+                        lookaheadTarget = Vector2.Lerp(targetPos,
+                            (Vector2)path[currentIndex + 1].transform.position, blend);
+                    }
+                }
+
+                Vector2 direction = (lookaheadTarget - currentPos).normalized;
+
+                // ── Ally avoidance steering ───────────────────────────────────
+                // Steers laterally around nearby heroes so they lane-change past
+                // each other instead of colliding and cancelling movement.
+                Vector2 avoidance = ComputeAvoidanceSteering(currentPos, direction);
+                if (avoidance.sqrMagnitude > 0.001f)
+                    direction = (direction + avoidance).normalized;
 
                 // Structural obstacle raycast (walls / unwalkable nodes).
                 var hit = Physics2D.Raycast(currentPos, direction, 1.5f,
@@ -176,6 +292,7 @@ public class UnitPathFollower : MonoBehaviour
                     var hitNode = hit.collider.GetComponent<PathNode>();
                     if (hitNode != null && !hitNode.isWalkable)
                     {
+                        IsFollowingPath = false;
                         PathNode goal = path[path.Count - 1];
                         if (goal != null && goal)
                             RecalculatePath(goal);
@@ -193,20 +310,142 @@ public class UnitPathFollower : MonoBehaviour
             currentIndex++;
         }
 
+        IsFollowingPath = false;
         UnsubscribeNodeListener();
         Debug.Log("Path Complete!");
     }
 
     /// <summary>
-    /// True when another unit on the Player layer is standing on <paramref name="node"/>.
-    /// Also checks the Enemy layer so heroes don't deadlock against enemies either.
+    /// Computes a lateral steering offset that nudges this hero away from nearby allies
+    /// when they are on a collision course.
+    ///
+    /// Works by projecting each nearby hero onto the perpendicular-to-movement axis
+    /// and steering to the opposite side.  The result is a natural lane-change: heroes
+    /// flowing past each other rather than bouncing or stalling head-on.
+    ///
+    /// Tie-break for exactly-ahead collisions uses the instance ID so the two heroes
+    /// always pick opposite sides deterministically.
     /// </summary>
-    private bool IsBlockedByUnit(PathNode node)
+    private Vector2 ComputeAvoidanceSteering(Vector2 pos, Vector2 moveDir)
     {
-        if (node == null || !node) return false;
+        int mask = LayerMask.GetMask("Player");
+        Collider2D[] hits = Physics2D.OverlapCircleAll(pos, AvoidRadius, mask);
+
+        Vector2 lateral = new Vector2(-moveDir.y, moveDir.x); // left-perpendicular
+        Vector2 steer   = Vector2.zero;
+
+        foreach (var col in hits)
+        {
+            if (col == null || col.gameObject == gameObject) continue;
+
+            Vector2 toOther = (Vector2)col.transform.position - pos;
+            float   dist    = toOther.magnitude;
+
+            float ahead, lateralOff;
+
+            if (dist < 0.001f)
+            {
+                // Exact overlap — deterministic split so each hero picks a different side.
+                ahead      = 1f;
+                lateralOff = (gameObject.GetInstanceID() & 1) == 0 ? 1f : -1f;
+            }
+            else
+            {
+                Vector2 toNorm = toOther / dist;
+                ahead      = Vector2.Dot(moveDir, toNorm);
+                lateralOff = Vector2.Dot(lateral, toNorm);
+            }
+
+            // Only avoid heroes that are in our forward hemisphere.
+            if (ahead <= 0f) continue;
+
+            // Steer opposite to the side the other hero is on.
+            // If |lateralOff| is tiny (nearly head-on), fall back to instance-ID split.
+            float steerSign;
+            if (Mathf.Abs(lateralOff) < 0.08f)
+                steerSign = (gameObject.GetInstanceID() & 1) == 0 ? 1f : -1f;
+            else
+                steerSign = lateralOff > 0f ? -1f : 1f;
+
+            float proximity = 1f - Mathf.Clamp01(dist / AvoidRadius);
+            steer += lateral * steerSign * proximity * ahead * AvoidStrength;
+        }
+
+        return steer;
+    }
+
+    /// <summary>
+    /// Strips redundant intermediate waypoints from the raw A* path using LOS tests.
+    /// Only direction-change nodes (corners) and the endpoint survive, turning a dense
+    /// staircase of grid nodes into a compact list of straight-line segments.
+    /// </summary>
+    private List<PathNode> SmoothenPath(List<PathNode> raw)
+    {
+        if (raw == null || raw.Count <= 2) return raw;
+
+        var result = new List<PathNode>();
+        result.Add(raw[0]);
+
+        int i = 0;
+        while (i < raw.Count - 1)
+        {
+            // Search backwards from the end of the path to find the furthest node
+            // reachable in a straight line from raw[i], then jump straight to it.
+            int furthest = i + 1;
+            for (int j = raw.Count - 1; j > i + 1; j--)
+            {
+                if (raw[j] != null && raw[j] &&
+                    HasClearLine(raw[i].transform.position, raw[j].transform.position))
+                {
+                    furthest = j;
+                    break;
+                }
+            }
+            result.Add(raw[furthest]);
+            i = furthest;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns true when a straight world-space line between <paramref name="from"/> and
+    /// <paramref name="to"/> passes only over walkable floor tiles (no walls in the way).
+    /// Samples the line every 0.4 units and queries the grid directly, which works
+    /// correctly for dungeons where walls are represented as absent tiles rather than
+    /// solid colliders.
+    /// </summary>
+    private bool HasClearLine(Vector3 from, Vector3 to)
+    {
+        var gridGen = GridGenerator.Instance;
+        if (gridGen == null) return false;
+
+        float dist  = Vector2.Distance(from, to);
+        int   steps = Mathf.Max(2, Mathf.CeilToInt(dist / 0.4f));
+
+        for (int i = 1; i < steps; i++)
+        {
+            Vector3  sample = Vector3.Lerp(from, to, (float)i / steps);
+            PathNode node   = gridGen.GetNodeAtWorldPosition(sample);
+            if (node == null || !node.isWalkable) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the first ENEMY collider standing on <paramref name="node"/>, or null if clear.
+    ///
+    /// Friendly heroes are intentionally NOT checked here — party members pass through
+    /// each other for pathfinding purposes (SeparationBehavior handles physical spacing).
+    /// This lets melee followers path through the leader to reach an enemy in a corridor
+    /// instead of deadlocking behind them indefinitely.
+    /// </summary>
+    private Collider2D GetBlockerCollider(PathNode node)
+    {
+        if (node == null || !node) return null;
 
         const float checkRadius = 0.35f;
-        int mask = LayerMask.GetMask("Player", "Enemy");
+        int mask = LayerMask.GetMask("Enemy");
 
         Collider2D[] hits = Physics2D.OverlapCircleAll(
             node.transform.position, checkRadius, mask);
@@ -214,10 +453,9 @@ public class UnitPathFollower : MonoBehaviour
         foreach (var col in hits)
         {
             if (col == null) continue;
-            if (col.gameObject != gameObject)
-                return true;
+            if (col.gameObject != gameObject) return col;
         }
-        return false;
+        return null;
     }
 
     private void HandleNodeBlocked(PathNode blockedNode)

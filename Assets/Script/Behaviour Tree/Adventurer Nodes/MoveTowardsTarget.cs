@@ -14,8 +14,23 @@ public class MoveTowardsTarget : Node
     // Fail if the hero hasn't moved this far within the check interval.
     // This catches truly unreachable targets (isolated rooms, tiles inside walls)
     // without penalising long-but-valid paths across the full map.
-    private const float StuckCheckInterval = 3f;
+    private const float StuckCheckInterval = 2.5f;
     private const float StuckDistanceThreshold = 0.5f;
+
+    // If the target GO is the same object but its position has shifted by more than
+    // this amount (e.g. FindFogCluster moved the cached GO to a new cluster),
+    // treat it as a new destination and retrigger pathfinding.
+    private const float TargetMovedThreshold = 1.5f;
+
+    // If this node was NOT evaluated last tick (because a higher-priority node like
+    // combat was running), the path may have been externally stopped.  Retrigger
+    // movement immediately when we return so the hero doesn't stand idle.
+    // Using last-evaluate-time rather than last-trigger-time is critical: the old
+    // 0.5 s trigger-time approach fired every 0.5 s during normal long walks and
+    // constantly restarted A*, causing the "2 steps forward, 1 step back" stutter.
+    private const float PreemptionGap = 0.15f;  // > 1 frame at 60 fps
+    private float _lastEvaluateTime = float.MinValue;
+
     private float nextStuckCheckTime = 0f;
     private Vector3 lastCheckedPosition = Vector3.zero;
 
@@ -48,15 +63,31 @@ public class MoveTowardsTarget : Node
 
         // ── Decide whether to (re-)trigger movement ───────────────────────────
 
-        bool isNewRawTarget = target != lastTarget;
+        // Detect preemption: was this node skipped last tick because a higher-priority
+        // node (e.g. combat) was running?  If so, the path may have been externally
+        // stopped and we must retrigger — but ONLY on the first tick back, not every
+        // tick during normal exploration (which was the old 0.5 s trigger-time bug).
+        bool wasPreempted   = Time.time - _lastEvaluateTime > PreemptionGap;
+        _lastEvaluateTime   = Time.time;
+
+        // A "new target" means either a different GO reference, OR the same GO has
+        // been repositioned far from where we last pathed (e.g. FindFogCluster moved
+        // its cached GO to a completely different cluster centre), OR the node was
+        // preempted (combat ran) and the path was externally stopped.
+        bool targetMoved    = actualDestination.HasValue &&
+                              Vector3.Distance(target.position, actualDestination.Value) > TargetMovedThreshold;
+        bool isNewRawTarget = target != lastTarget || targetMoved || wasPreempted;
 
         if (isNewRawTarget)
         {
-            Debug.Log($"MoveTowardsTarget: New target - {target.name}");
+            if (wasPreempted && target == lastTarget && !targetMoved)
+                Debug.Log($"MoveTowardsTarget: Resuming after preemption — retriggering path to {target.name}");
+            else
+                Debug.Log($"MoveTowardsTarget: New target - {target.name}");
 
             // Stop previous movement
             UnitPathFollower pathFollower = self.GetComponent<UnitPathFollower>();
-            pathFollower?.StopAllCoroutines();
+            pathFollower?.StopPath();
 
             MovementComponent movementComp = self.GetComponent<MovementComponent>();
             if (movementComp == null)
@@ -91,7 +122,7 @@ public class MoveTowardsTarget : Node
         if (distance <= approachRange)
         {
             Debug.Log($"MoveTowardsTarget: Arrived at {target.name} (dist: {distance:F2})");
-            self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
+            self.GetComponent<UnitPathFollower>()?.StopPath();
             Reset();
             return NodeState.Success;
         }
@@ -110,7 +141,7 @@ public class MoveTowardsTarget : Node
             {
                 Debug.Log($"MoveTowardsTarget: Hero hasn't moved ({movedDistance:F2} units in " +
                           $"{StuckCheckInterval}s) — target likely unreachable, returning Failure");
-                self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
+                self.GetComponent<UnitPathFollower>()?.StopPath();
                 Reset();
                 return NodeState.Failure;
             }
@@ -124,9 +155,15 @@ public class MoveTowardsTarget : Node
 
     private void Reset()
     {
-        // lastTarget intentionally not cleared — change detection still works
-        actualDestination     = null;
-        nextStuckCheckTime    = 0f;
-        lastCheckedPosition   = Vector3.zero;
+        // Clear lastTarget so the next evaluation treats any returning target (even the
+        // same cached FogCluster GO) as new and retriggers pathfinding.  Without this,
+        // after a stuck detection the hero loops: stuck → Reset → not-new → Running →
+        // stuck → Reset forever, because isNewRawTarget never becomes true again.
+        lastTarget          = null;
+        actualDestination   = null;
+        nextStuckCheckTime  = 0f;
+        lastCheckedPosition = Vector3.zero;
+        // Do NOT reset _lastEvaluateTime here — preemption detection must remain accurate
+        // across Reset() calls so the first post-combat retrigger still fires correctly.
     }
 }

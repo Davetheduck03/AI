@@ -29,7 +29,11 @@ public class MovementComponent : UnitComponent
         ReleaseClaim();
     }
 
-    public void OnTriggerMove(Transform self, Transform target)
+    /// <param name="speedMultiplier">
+    /// Scales movement_Speed for this particular path.  Pass values > 1 when the
+    /// hero needs to catch up (e.g. FollowLeader in catch-up mode).  Defaults to 1.
+    /// </param>
+    public void OnTriggerMove(Transform self, Transform target, float speedMultiplier = 1f)
     {
         // Guard: component or its GameObject may already be destroyed.
         if (this == null || !this || self == null) return;
@@ -69,7 +73,8 @@ public class MovementComponent : UnitComponent
         // Capture component references so the lambda can null-check them after
         // the coroutine completes — the unit may have died during that one frame.
         MovementComponent self_mc = this;
-        UnitPathFollower self_pf = agent;
+        UnitPathFollower  self_pf = agent;
+        float             speed   = movement_Speed * Mathf.Max(speedMultiplier, 0.1f);
 
         Astar.Instance.FindPath(start, goal, (path) =>
         {
@@ -77,7 +82,7 @@ public class MovementComponent : UnitComponent
             if (self_pf == null || !self_pf) return;
 
             if (path != null && path.Count > 0)
-                self_pf.SetPath(path, movement_Speed, self_mc);
+                self_pf.SetPath(path, speed, self_mc);
             else
                 Debug.LogWarning("No valid path found between nodes!");
         });

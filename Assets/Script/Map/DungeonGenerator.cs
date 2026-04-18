@@ -229,11 +229,10 @@ public class DungeonGenerator : MonoBehaviour
     {
         int x = from.x, y = from.y;
 
-        // Horizontal segment — 4 tiles wide using a 2-tile centre pair (y, y+1) with
-        // one tile on each outer edge (y-1, y+2).  Even width can't be perfectly
-        // centred on a single tile, so this gives the most balanced feel.
+        // Horizontal segment — 5 tiles wide, centred on y  (y-2 .. y+2).
         while (x != to.x)
         {
+            SetFloor(x, y - 2);
             SetFloor(x, y - 1);
             SetFloor(x, y);
             SetFloor(x, y + 1);
@@ -241,9 +240,10 @@ public class DungeonGenerator : MonoBehaviour
             x += (x < to.x) ? 1 : -1;
         }
 
-        // Vertical segment — 4 tiles wide (x-1, x, x+1, x+2)
+        // Vertical segment — 5 tiles wide, centred on x  (x-2 .. x+2).
         while (y != to.y)
         {
+            SetFloor(x - 2, y);
             SetFloor(x - 1, y);
             SetFloor(x,     y);
             SetFloor(x + 1, y);
@@ -251,14 +251,9 @@ public class DungeonGenerator : MonoBehaviour
             y += (y < to.y) ? 1 : -1;
         }
 
-        // End point + 4-wide cross so the elbow junction is fully open
-        SetFloor(to.x - 1, to.y);
-        SetFloor(to.x,     to.y);
-        SetFloor(to.x + 1, to.y);
-        SetFloor(to.x + 2, to.y);
-        SetFloor(to.x,     to.y - 1);
-        SetFloor(to.x,     to.y + 1);
-        SetFloor(to.x,     to.y + 2);
+        // End point + 5-wide cross so the elbow junction is fully open.
+        for (int dx = -2; dx <= 2; dx++) SetFloor(to.x + dx, to.y);
+        for (int dy = -2; dy <= 2; dy++) SetFloor(to.x, to.y + dy);
     }
 
     private void SetFloor(int x, int y)

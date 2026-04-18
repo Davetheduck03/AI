@@ -1,87 +1,181 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// ACTION: Finds best fog cluster to explore based on size and health.
-/// Better for open/corridor maps than rigid room detection.
+/// ACTION: Finds a fog cluster to explore and exposes it as bb["target"].
+///
+/// Three systems make exploration feel human rather than mechanical:
+///
+/// 1. HERO VARIANT — each hero has a stable 0-6 index derived from its instance ID.
+///    When candidates are ranked by score, every hero picks a different rank, so the
+///    party naturally fans out across separate regions of the dungeon instead of all
+///    converging on the same optimal cluster.
+///
+/// 2. EXPLORATION MEMORY — the node logs the hero's position every refresh.
+///    Clusters close to recently visited positions are penalised, so heroes
+///    naturally drift toward unexplored territory rather than circling the same rooms.
+///
+/// 3. SCATTER — a small random offset (≤ ScatterRadius units) is applied to the
+///    final target.  Heroes sharing a cluster don't walk to the exact same tile, and
+///    paths look organic rather than geometrically identical every run.
+///
+/// The cluster search is throttled to ClusterRefreshInterval seconds and the target
+/// GO is reused across ticks so MoveTowardsTarget doesn't restart A* every frame.
 /// </summary>
 public class FindFogCluster : Node
 {
-    private float maxSearchRange;
-    private FogClusterExplorer clusterExplorer;
-    private const string TARGET_NAME = "ClusterTarget";
+    private readonly FogClusterExplorer _clusterExplorer;
 
-    // Minimum distance the cluster centre must be from the hero.
-    // If the target is already within this range MoveTowardsTarget would
-    // succeed immediately without the hero moving, so we skip it and let
-    // the cluster explorer fall back to a more distant unrevealed tile.
+    // ── Explore distances ─────────────────────────────────────────────────────
+    // Clusters this close to the hero would be arrived-at almost immediately;
+    // skip them and look for something further away.
     private const float MinExploreDistance = 2.5f;
 
-    public FindFogCluster(Blackboard bb, float range = 100f) : base(bb)
-    {
-        maxSearchRange = range;
-        clusterExplorer = Object.FindAnyObjectByType<FogClusterExplorer>();
+    // ── Refresh throttle ──────────────────────────────────────────────────────
+    // How often to re-run the cluster search. Between refreshes the cached target GO
+    // is reused unchanged so MoveTowardsTarget does not restart A* every frame.
+    private const float ClusterRefreshInterval = 1.5f;
+    private float _nextRefreshTime = 0f;
 
-        if (clusterExplorer == null)
-        {
-            Debug.LogWarning("FindFogCluster: No FogClusterExplorer found in scene!");
-        }
+    // Persistent reusable GO — never destroyed between ticks, just repositioned.
+    private GameObject _targetGO      = null;
+    private bool       _hasValidTarget = false;
+
+    // ── Hero variant ──────────────────────────────────────────────────────────
+    // A stable 0-6 index determined once from the hero's instance ID.
+    // Different heroes pick different ranked candidates, spreading the party.
+    private int _heroVariant = -1;
+
+    // ── Exploration memory ────────────────────────────────────────────────────
+    // A short circular log of world positions this hero recently visited.
+    // Clusters near these positions are scored down so heroes prefer fresh territory.
+    private struct MemoryEntry { public Vector3 pos; public float time; }
+    private readonly List<MemoryEntry> _recentPositions = new();
+
+    private const int   MemoryCapacity    = 7;     // max entries kept
+    private const float MemoryDuration    = 40f;   // seconds before a position is forgotten
+    private const float MemoryRecordGap   = 2.0f;  // min movement before a new entry is added
+    private const float MemoryPenaltyRadius = 4.5f; // penalty radius around each memory entry
+    private const float MemoryPenaltyMax    = 0.5f; // max penalty deducted per nearby memory
+
+    // ── Scatter ───────────────────────────────────────────────────────────────
+    // Random 2-D offset added to the chosen cluster centre.
+    // Keeps heroes from always walking to the exact geometric tile every run.
+    private const float ScatterRadius = 1.3f;
+
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    public FindFogCluster(Blackboard bb) : base(bb)
+    {
+        _clusterExplorer = Object.FindAnyObjectByType<FogClusterExplorer>();
+        if (_clusterExplorer == null)
+            Debug.LogWarning("FindFogCluster: No FogClusterExplorer in scene!");
     }
+
+    // ── Evaluate ──────────────────────────────────────────────────────────────
 
     public override NodeState Evaluate()
     {
         Transform self = bb.Get<Transform>("self");
-        if (self == null)
+        if (self == null || _clusterExplorer == null) return NodeState.Failure;
+
+        // Assign variant once — stable for this hero's lifetime.
+        if (_heroVariant < 0)
+            _heroVariant = Mathf.Abs(self.GetInstanceID()) % 7;
+
+        if (Time.time < _nextRefreshTime && _targetGO != null && _hasValidTarget)
         {
+            bb.Set("target", _targetGO.transform);
+            return NodeState.Success;
+        }
+
+        // ── Periodic refresh ─────────────────────────────────────────────────
+        _nextRefreshTime = Time.time + ClusterRefreshInterval;
+
+        // Log current position and prune stale entries.
+        RecordPosition(self.position);
+        PruneMemory();
+
+        float healthPct = 1f;
+        var hc = self.GetComponent<HealthComponent>();
+        if (hc != null) healthPct = hc.currentHealth / hc.maxHealth;
+
+        // Get multiple ranked cluster centres.
+        List<Vector3> candidates = _clusterExplorer.GetRankedTargets(
+            self.position, healthPct, MinExploreDistance, maxResults: 6);
+
+        if (candidates.Count == 0)
+        {
+            _hasValidTarget = false;
+            Debug.Log($"FindFogCluster [{self.name}]: no unrevealed tiles remain");
             return NodeState.Failure;
         }
 
-        if (clusterExplorer == null)
+        // ── Score & pick ─────────────────────────────────────────────────────
+        // Each candidate starts at score 1.  Nearby memory entries subtract a
+        // fraction of MemoryPenaltyMax proportional to proximity.
+        float[] scores = new float[candidates.Count];
+        for (int i = 0; i < candidates.Count; i++)
         {
-            return NodeState.Failure;
-        }
-
-        // Clean up any previous exploration target
-        CleanupOldTarget();
-
-        // Get current health
-        float healthPercent = 1f;
-        HealthComponent healthComp = self.GetComponent<HealthComponent>();
-        if (healthComp != null)
-        {
-            healthPercent = healthComp.currentHealth / healthComp.maxHealth;
-        }
-
-        // Find best cluster — clusters within MinExploreDistance are filtered inside
-        // GetBestExplorationTarget so we always get a reachable, non-trivial destination.
-        Vector3? clusterTarget = clusterExplorer.GetBestExplorationTarget(self.position, healthPercent, MinExploreDistance);
-
-        if (clusterTarget.HasValue)
-        {
-            float distance = Vector3.Distance(self.position, clusterTarget.Value);
-
-            if (distance <= maxSearchRange)
+            scores[i] = 1f;
+            foreach (var entry in _recentPositions)
             {
-                // Create target
-                GameObject targetObj = new GameObject(TARGET_NAME);
-                targetObj.transform.position = clusterTarget.Value;
-
-                bb.Set("target", targetObj.transform);
-
-                Debug.Log($"FindFogCluster: Targeting cluster at {clusterTarget.Value} (dist: {distance:F1})");
-                return NodeState.Success;
+                float d = Vector3.Distance(candidates[i], entry.pos);
+                if (d < MemoryPenaltyRadius)
+                    scores[i] -= MemoryPenaltyMax * (1f - d / MemoryPenaltyRadius);
             }
         }
 
-        Debug.Log("FindFogCluster: No suitable clusters found");
-        return NodeState.Failure;
+        // Build a score-sorted index list (highest first).
+        List<int> ranked = new();
+        for (int i = 0; i < candidates.Count; i++) ranked.Add(i);
+        ranked.Sort((a, b) => scores[b].CompareTo(scores[a]));
+
+        // Hero variant offsets into the ranked list so different heroes pick
+        // different clusters while still preferring well-scored candidates.
+        int pickRank  = _heroVariant % ranked.Count;
+        int pickIdx   = ranked[pickRank];
+        Vector3 center = candidates[pickIdx];
+
+        // ── Scatter ──────────────────────────────────────────────────────────
+        Vector2 scatter2D = Random.insideUnitCircle * ScatterRadius;
+        Vector3 chosen    = center + new Vector3(scatter2D.x, scatter2D.y, 0f);
+
+        // ── Update the persistent GO ─────────────────────────────────────────
+        if (_targetGO == null)
+            _targetGO = new GameObject("_FogClusterTarget")
+                        { hideFlags = HideFlags.HideAndDontSave };
+
+        _targetGO.transform.position = chosen;
+        _hasValidTarget = true;
+
+        Debug.Log($"FindFogCluster [{self.name}] v{_heroVariant}: " +
+                  $"rank[{pickRank}] → cluster[{pickIdx}] @ {center} " +
+                  $"score={scores[pickIdx]:F2} scatter=({scatter2D.x:F1},{scatter2D.y:F1})");
+
+        bb.Set("target", _targetGO.transform);
+        return NodeState.Success;
     }
 
-    private void CleanupOldTarget()
+    // ── Memory helpers ────────────────────────────────────────────────────────
+
+    private void RecordPosition(Vector3 pos)
     {
-        Transform oldTarget = bb.Get<Transform>("target");
-        if (oldTarget != null && oldTarget.gameObject.name == TARGET_NAME)
-        {
-            Object.Destroy(oldTarget.gameObject);
-        }
+        // Skip if the hero hasn't moved far enough since the last recorded point.
+        if (_recentPositions.Count > 0 &&
+            Vector3.Distance(_recentPositions[^1].pos, pos) < MemoryRecordGap)
+            return;
+
+        _recentPositions.Add(new MemoryEntry { pos = pos, time = Time.time });
+
+        // Trim to capacity — oldest entry goes first.
+        while (_recentPositions.Count > MemoryCapacity)
+            _recentPositions.RemoveAt(0);
+    }
+
+    private void PruneMemory()
+    {
+        float cutoff = Time.time - MemoryDuration;
+        _recentPositions.RemoveAll(e => e.time < cutoff);
     }
 }

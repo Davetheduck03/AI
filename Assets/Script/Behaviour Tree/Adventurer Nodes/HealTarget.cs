@@ -108,7 +108,7 @@ public class HealTarget : Node
             return NodeState.Running;   // waiting out cooldown
 
         float healAmount = dc.TotalDamage;
-        targetHC.Heal(healAmount);
+        targetHC.Heal(healAmount, self.gameObject);
         _lastHealTime = Time.time;
 
         Debug.Log($"[HealTarget] {self.name} healed {target.name} for {healAmount:F1} HP");
@@ -125,6 +125,6 @@ public class HealTarget : Node
 
     private void StopMove(Transform self)
     {
-        self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
+        self.GetComponent<UnitPathFollower>()?.StopPath();
     }
 }

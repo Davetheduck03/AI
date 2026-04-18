@@ -76,9 +76,10 @@ public class HealerAI : BehaviorTreeRunner
         root.AddChild(followSeq);
 
         // ── Priority 4: EXPLORE (fallback if this healer is somehow the leader) ─
+        // No NoRevealedEnemies guard — attack/heal are higher priority; if those
+        // fail the healer should explore rather than stand idle mid-dungeon.
         var exploreSeq = new Sequence(bb);
-        exploreSeq.AddChild(new NoRevealedEnemies(bb, dangerRange, wallLayers));
-        exploreSeq.AddChild(new FindFogCluster(bb, 50f));
+        exploreSeq.AddChild(new FindFogCluster(bb));
         exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);
 

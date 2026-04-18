@@ -139,7 +139,7 @@ public class GridGenerator : MonoBehaviour
         if (grid == null)
             return;
 
-        int width = grid.GetLength(0);
+        int width  = grid.GetLength(0);
         int height = grid.GetLength(1);
 
         for (int x = 0; x < width; x++)
@@ -153,17 +153,41 @@ public class GridGenerator : MonoBehaviour
 
                 node.neighbors.Clear();
 
-                if (x > 0 && grid[x - 1, y] != null)
-                    node.neighbors.Add(grid[x - 1, y]);
+                // ── Cardinal neighbours ───────────────────────────────────────
+                if (x > 0          && grid[x - 1, y    ] != null) node.neighbors.Add(grid[x - 1, y    ]);
+                if (x < width  - 1 && grid[x + 1, y    ] != null) node.neighbors.Add(grid[x + 1, y    ]);
+                if (y > 0          && grid[x,     y - 1 ] != null) node.neighbors.Add(grid[x,     y - 1]);
+                if (y < height - 1 && grid[x,     y + 1 ] != null) node.neighbors.Add(grid[x,     y + 1]);
 
-                if (x < width - 1 && grid[x + 1, y] != null)
-                    node.neighbors.Add(grid[x + 1, y]);
+                // ── Diagonal neighbours ───────────────────────────────────────
+                // Corner-cutting is forbidden: a diagonal step is only added when
+                // BOTH adjacent cardinal tiles exist (are walkable floor tiles).
+                // This prevents heroes from squeezing through the shared corner of
+                // two wall tiles in narrow dungeon corridors.
 
-                if (y > 0 && grid[x, y - 1] != null)
-                    node.neighbors.Add(grid[x, y - 1]);
+                // SW  (x-1, y-1)
+                if (x > 0 && y > 0 &&
+                    grid[x - 1, y    ] != null && grid[x, y - 1] != null &&
+                    grid[x - 1, y - 1] != null)
+                    node.neighbors.Add(grid[x - 1, y - 1]);
 
-                if (y < height - 1 && grid[x, y + 1] != null)
-                    node.neighbors.Add(grid[x, y + 1]);
+                // SE  (x+1, y-1)
+                if (x < width - 1 && y > 0 &&
+                    grid[x + 1, y    ] != null && grid[x, y - 1] != null &&
+                    grid[x + 1, y - 1] != null)
+                    node.neighbors.Add(grid[x + 1, y - 1]);
+
+                // NW  (x-1, y+1)
+                if (x > 0 && y < height - 1 &&
+                    grid[x - 1, y    ] != null && grid[x, y + 1] != null &&
+                    grid[x - 1, y + 1] != null)
+                    node.neighbors.Add(grid[x - 1, y + 1]);
+
+                // NE  (x+1, y+1)
+                if (x < width - 1 && y < height - 1 &&
+                    grid[x + 1, y    ] != null && grid[x, y + 1] != null &&
+                    grid[x + 1, y + 1] != null)
+                    node.neighbors.Add(grid[x + 1, y + 1]);
             }
         }
     }

@@ -37,10 +37,17 @@ public class KnightAI : BehaviorTreeRunner
         root.AddChild(extractSeq);
 
         // ── Priority 1: ATTACK ───────────────────────────────────────────────
-        // AdaptiveAttack checks the equipped weapon every tick and delegates to
-        // KiteAndAttack (bow) or MoveAndAttack (melee) automatically.
+        // SelectCombatTarget replaces the old FindNearestRevealedEnemy + separate
+        // AssistLeaderInCombat sequences.  A single node (and therefore a single
+        // KiteAndAttack/MoveAndAttack instance) is active at all times, which
+        // eliminates the "thrashing" caused by two instances competing to call
+        // TriggerMove to slightly different positions every tick.
+        //
+        // Priority: self-defence range → leader's target → own scan.
         var attackSeq = new Sequence(bb);
-        attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange, wallLayers));
+        attackSeq.AddChild(new SelectCombatTarget(bb, selfDefenseRange: 3f,
+                                                  detectionRange: enemyDetectionRange,
+                                                  wallLayers: wallLayers));
         attackSeq.AddChild(new AdaptiveAttack(bb, enemyLayer, kiteDistance, wallLayers));
         root.AddChild(attackSeq);
 
@@ -62,16 +69,13 @@ public class KnightAI : BehaviorTreeRunner
         root.AddChild(worldItemSeq);
 
         // ── Priority 4: FOLLOW LEADER (followers only) ───────────────────────
-        // Leaders return Failure from FollowLeader and fall through to Explore.
-        // If the leader dies, followers also fall through to Explore (independent).
         var followSeq = new Sequence(bb);
         followSeq.AddChild(new FollowLeader(bb, 0.7f));
         root.AddChild(followSeq);
 
         // ── Priority 5: EXPLORE (leader + fallback for all) ──────────────────
         var exploreSeq = new Sequence(bb);
-        exploreSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
-        exploreSeq.AddChild(new FindFogCluster(bb, 50f));
+        exploreSeq.AddChild(new FindFogCluster(bb));
         exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);
 

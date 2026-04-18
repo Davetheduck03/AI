@@ -65,7 +65,7 @@ public class FindPlayer : Node
         {
             wasChasing = false;
             var pf = self.GetComponent<UnitPathFollower>();
-            pf?.StopAllCoroutines();
+            pf?.StopPath();
             bb.Set<Transform>("target", null);
             Debug.Log($"[FindPlayer] {self.name} lost sight of all players — dropping aggro");
         }

@@ -31,8 +31,9 @@ public class KiteAndAttack : Node
 	private const float MoveRetriggerInterval = 0.5f;
 
 	// Give up chasing if we haven't closed in after this many seconds.
-	// Prevents the unit from locking onto an unreachable enemy indefinitely.
-	private const float ClosingTimeout     = 8f;
+	// 14 s gives followers starting from a formation slot enough time to
+	// navigate a corridor to the target before we declare the enemy unreachable.
+	private const float ClosingTimeout     = 14f;
 	private float       _closingStartTime  = float.MaxValue;
 
 	// After timing out on an enemy, ignore that specific enemy for this long so
@@ -309,7 +310,7 @@ public class KiteAndAttack : Node
 	private void StopMovement(Transform self)
 	{
 		var pf = self.GetComponent<UnitPathFollower>();
-		if (pf != null) pf.StopAllCoroutines();
+		if (pf != null) pf.StopPath();
 	}
 
 	private void Cleanup(Transform self)

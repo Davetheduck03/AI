@@ -20,6 +20,11 @@ public class BaseHero : BaseUnit
         // all UnitComponents) is guaranteed to have run first.
         if (GetComponent<SeparationBehavior>() == null)
             gameObject.AddComponent<SeparationBehavior>();
+
+        // Auto-attach the VFX controller so heroes get attack/heal particle effects
+        // without needing any prefab changes.
+        if (GetComponent<HeroVFXController>() == null)
+            gameObject.AddComponent<HeroVFXController>();
     }
 
     private void OnEnable()

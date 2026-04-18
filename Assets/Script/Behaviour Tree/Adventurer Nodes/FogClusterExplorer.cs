@@ -29,6 +29,51 @@ public class FogClusterExplorer : MonoBehaviour
     }
 
     /// <summary>
+    /// Returns up to <paramref name="maxResults"/> cluster centres ranked by size
+    /// (largest unexplored area first), filtered by health and minimum distance.
+    /// Falls back to the nearest individual fog tile when there aren't enough clusters.
+    /// Used by FindFogCluster for human-like spread exploration.
+    /// </summary>
+    public List<Vector3> GetRankedTargets(
+        Vector3 fromPosition,
+        float   currentHealthPercent,
+        float   minDistance,
+        int     maxResults = 6)
+    {
+        var result = new List<Vector3>();
+        if (fogManager == null) return result;
+
+        List<Vector3> unrevealedTiles = fogManager.GetUnrevealedPositions();
+        if (unrevealedTiles.Count == 0) return result;
+
+        List<FogCluster> clusters = FindFogClusters(unrevealedTiles, fromPosition);
+        List<FogCluster> valid    = FilterClustersByHealth(clusters, currentHealthPercent);
+
+        if (minDistance > 0f)
+            valid = valid.Where(c => c.distanceFromPlayer >= minDistance).ToList();
+
+        // Largest clusters first — most unexplored area wins
+        valid.Sort((a, b) => b.size.CompareTo(a.size));
+
+        foreach (var c in valid)
+        {
+            result.Add(c.center);
+            if (result.Count >= maxResults) return result;
+        }
+
+        // Pad with individual fog tiles when clusters are sparse
+        if (result.Count < maxResults)
+        {
+            Vector3? extra = GetNearestFogBeyond(unrevealedTiles, fromPosition, minDistance);
+            extra ??= GetNearestFog(unrevealedTiles, fromPosition);
+            if (extra.HasValue && !result.Contains(extra.Value))
+                result.Add(extra.Value);
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Get the best fog cluster to explore from current position.
     /// Returns center of largest nearby fog cluster, considering health.
     /// Clusters closer than <paramref name="minDistance"/> are skipped; falls back to

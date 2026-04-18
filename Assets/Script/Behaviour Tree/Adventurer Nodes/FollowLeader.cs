@@ -23,13 +23,14 @@ public class FollowLeader : Node
     // Reusable hidden GO used as the A* movement destination.
     private GameObject _targetGO;
 
-    // Only retrigger A* when the slot target has actually moved this far from
-    // the last position we pathed to, OR when the periodic timer fires.
-    // This prevents the janky stop-start from restarting paths every frame.
-    private Vector3 _lastPathedTo      = new Vector3(float.MaxValue, 0f, 0f);
-    private float   _nextMoveCheck     = 0f;
-    private const float MoveCheckInterval   = 1.0f;
-    private const float SlotDriftThreshold  = 0.8f;
+    // ── Refresh throttling ────────────────────────────────────────────────────
+    // Re-path interval is dynamic: short when far behind, normal when close.
+    // This keeps followers tight without hammering A* every frame when in position.
+    private Vector3 _lastPathedTo         = new Vector3(float.MaxValue, 0f, 0f);
+    private float   _nextMoveCheck        = 0f;
+    private const float MoveCheckNear     = 1.0f;  // normal follow: re-check every 1 s
+    private const float MoveCheckFar      = 0.4f;  // catch-up mode: re-check every 0.4 s
+    private const float SlotDriftThreshold = 0.5f; // retrigger when slot shifts this far
 
     // Prevent spamming StopAllCoroutines every tick while "in position".
     private bool _arrivedAtSlot = false;
@@ -38,12 +39,27 @@ public class FollowLeader : Node
     // this distance, the slot is inside a wall. Switch to the corridor fallback instead.
     private const float WallSnapThreshold = 1.5f;
 
-    // Stuck detection: if the hero hasn't moved meaningfully for a while while
-    // still far from the slot, fall back to independent exploration.
+    // ── Stuck detection ───────────────────────────────────────────────────────
     private float   _nextStuckCheck    = 0f;
     private Vector3 _lastStuckPos      = Vector3.zero;
-    private const float StuckCheckInterval  = 3f;
-    private const float StuckMoveThreshold  = 0.4f;
+    private const float StuckCheckInterval  = 2f;   // was 3 s
+    private const float StuckMoveThreshold  = 0.3f; // was 0.4
+
+    // ── Catch-up & leash ─────────────────────────────────────────────────────
+    // CatchUpDist  — hero is this far from its slot → boost speed + fast refresh.
+    // LeashMaxDist — hero is this far from the LEADER → ignore slot, path straight
+    //                to the leader at full catch-up speed.  Prevents heroes from
+    //                drifting an entire room away during/after combat.
+    private const float CatchUpDist    = 2.5f;
+    private const float CatchUpSpeed   = 1.45f;  // speed multiplier in catch-up mode
+    private const float LeashMaxDist   = 7f;     // hard-leash: path to leader, not slot
+
+    // ── Combat formation compression ──────────────────────────────────────────
+    // When the leader has an active combat target the normal traversal slot
+    // (up to 2.8 units back) keeps followers too far to engage.  Compress
+    // everyone forward to just behind the leader so their own attack/assist
+    // sequences can fire and ranged units reach their firing range.
+    private const float CombatFollowDist = 1.2f;   // world units directly behind leader
 
     public FollowLeader(Blackboard bb, float stopRange = 0.7f) : base(bb)
     {
@@ -80,7 +96,7 @@ public class FollowLeader : Node
         float   distToLeader   = Vector3.Distance(self.position, leader.position);
         if (forwardOffset > 0.5f && distToLeader < 3f)
         {
-            self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
+            self.GetComponent<UnitPathFollower>()?.StopPath();
             _arrivedAtSlot = false;   // reset so we re-trigger movement once behind
             _lastPathedTo  = new Vector3(float.MaxValue, 0f, 0f);
             return NodeState.Running;
@@ -110,7 +126,48 @@ public class FollowLeader : Node
         // through to Explore rather than returning Running and freezing the hero.
         if (resolvedNode == null) return NodeState.Failure;
 
+        // ── Combat formation compression ─────────────────────────────────────
+        // When the leader has an active combat target, discard the spread-out
+        // traversal slot and advance every follower to just behind the leader.
+        // This brings ranged units within their own detection/attack range so
+        // their higher-priority attack sequences can engage instead of standing
+        // idle in a slot designed for dungeon traversal, not group combat.
+        Transform combatTarget = TeamBlackboard.Instance?.Get<Transform>("leaderCombatTarget");
+        if (combatTarget != null && combatTarget.gameObject != null)
+        {
+            Vector3  combatPos  = leader.position + (-leaderFwd) * CombatFollowDist;
+            PathNode combatNode = GridGenerator.Instance?.GetNearestWalkableNode(combatPos);
+            if (combatNode != null)
+            {
+                formPos      = combatNode.transform.position;
+                resolvedNode = combatNode;
+            }
+        }
+
         float distToSlot = Vector3.Distance(self.position, formPos);
+        // distToLeader was already computed above for the yield-if-ahead check.
+
+        // ── Hard leash — hero is too far from the leader ─────────────────────
+        // Skip formation slot entirely and path straight to the leader at catch-up
+        // speed. Only re-trigger A* when not already running a path toward the leader.
+        if (distToLeader > LeashMaxDist)
+        {
+            var   pfLeash      = self.GetComponent<UnitPathFollower>();
+            bool  leashRunning = pfLeash != null && pfLeash.IsFollowingPath;
+            float leashShift   = Vector3.Distance(leader.position, _lastPathedTo);
+
+            if (!leashRunning || leashShift > 1.5f)
+            {
+                if (_targetGO == null)
+                    _targetGO = new GameObject("_FollowPos") { hideFlags = HideFlags.HideAndDontSave };
+                _targetGO.transform.position = leader.position;
+                self.GetComponent<MovementComponent>()?.OnTriggerMove(self, _targetGO.transform, CatchUpSpeed);
+                _lastPathedTo = leader.position;
+                _nextMoveCheck = Time.time + MoveCheckFar;
+            }
+            _arrivedAtSlot = false;
+            return NodeState.Running;
+        }
 
         // ── Stuck detection ──────────────────────────────────────────────────
         if (Time.time >= _nextStuckCheck)
@@ -119,11 +176,7 @@ public class FollowLeader : Node
             _lastStuckPos   = self.position;
             _nextStuckCheck = Time.time + StuckCheckInterval;
 
-            // Stuck AND significantly out of position → path directly to the leader
-            // instead of returning Failure. Returning Failure here drops to Explore,
-            // which also fails when there are no fog clusters, leaving the hero permanently
-            // idle. Pathing to the leader's actual position (not the formation slot)
-            // is a stronger recovery — it works even in narrow corridors.
+            // Stuck AND significantly out of position → path directly to the leader.
             if (moved < StuckMoveThreshold && distToSlot > _stopRange * 3f)
             {
                 Debug.Log($"[FollowLeader] {self.name} stuck far from slot — pathing directly to leader.");
@@ -132,8 +185,10 @@ public class FollowLeader : Node
                     if (_targetGO == null)
                         _targetGO = new GameObject("_FollowPos") { hideFlags = HideFlags.HideAndDontSave };
                     _targetGO.transform.position = leader.position;
-                    self.GetComponent<MovementComponent>()?.OnTriggerMove(self, _targetGO.transform);
-                    _nextMoveCheck = Time.time + MoveCheckInterval;
+                    // Force a fresh path — hero is genuinely stuck so we must restart.
+                    self.GetComponent<MovementComponent>()?.OnTriggerMove(self, _targetGO.transform, CatchUpSpeed);
+                    _lastPathedTo  = leader.position;
+                    _nextMoveCheck = Time.time + MoveCheckFar;
                 }
             }
         }
@@ -143,34 +198,45 @@ public class FollowLeader : Node
         {
             if (!_arrivedAtSlot)
             {
-                // Stop any lingering movement exactly once when we arrive.
                 _arrivedAtSlot = true;
-                self.GetComponent<UnitPathFollower>()?.StopAllCoroutines();
+                self.GetComponent<UnitPathFollower>()?.StopPath();
             }
             return NodeState.Running;
         }
         _arrivedAtSlot = false;
 
         // ── Move toward formation slot ───────────────────────────────────────
-        // Retrigger A* only when the slot target has drifted significantly from
-        // where we last pathed (leader moved, so slot moved), OR when the periodic
-        // timer fires to recover from silent path failures.
-        //
-        // Do NOT bypass the timer unconditionally when far from the slot — that was
-        // the source of jankiness: calling OnTriggerMove every frame restarted the
-        // A* coroutine before it could complete, causing constant stop-start movement.
-        bool slotDrifted = Vector3.Distance(formPos, _lastPathedTo) > SlotDriftThreshold;
+        // Catch-up mode: hero is CatchUpDist+ from slot → boost speed.
+        bool  catchingUp = distToSlot > CatchUpDist;
+        float speedMult  = catchingUp ? CatchUpSpeed : 1f;
 
-        if (slotDrifted || Time.time >= _nextMoveCheck)
+        // Decide whether a new A* call is needed.
+        //
+        // Key rule: if a path is ALREADY RUNNING and the slot hasn't moved far
+        // from where we last pathed to, let the coroutine finish — restarting it
+        // every 0.4 s is exactly what makes movement look rigid and choppy.
+        //
+        // We only restart when:
+        //   a) No path is currently running (hero finished or path was aborted).
+        //   b) The slot has shifted significantly while catching up (>1.5 units),
+        //      meaning finishing the current path would leave the hero off-target.
+        //   c) Recovery timer fired AND hero isn't moving at all (silent failure).
+        var    pf             = self.GetComponent<UnitPathFollower>();
+        bool   pathRunning    = pf != null && pf.IsFollowingPath;
+        float  slotShift      = Vector3.Distance(formPos, _lastPathedTo);
+        bool   slotMovedFar   = slotShift > (pathRunning ? 1.5f : SlotDriftThreshold);
+        bool   recoveryNeeded = !pathRunning && Time.time >= _nextMoveCheck;
+
+        if (slotMovedFar || recoveryNeeded)
         {
-            _nextMoveCheck = Time.time + MoveCheckInterval;
+            _nextMoveCheck = Time.time + (catchingUp ? MoveCheckFar : MoveCheckNear);
             _lastPathedTo  = formPos;
 
             if (_targetGO == null)
                 _targetGO = new GameObject("_FollowPos") { hideFlags = HideFlags.HideAndDontSave };
 
             _targetGO.transform.position = formPos;
-            self.GetComponent<MovementComponent>()?.OnTriggerMove(self, _targetGO.transform);
+            self.GetComponent<MovementComponent>()?.OnTriggerMove(self, _targetGO.transform, speedMult);
         }
 
         return NodeState.Running;

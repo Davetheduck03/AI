@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 /// <summary>
@@ -6,6 +7,13 @@ using UnityEngine;
 /// </summary>
 public class DamageComponent : UnitComponent
 {
+    /// <summary>
+    /// Fired whenever this component lands an attack.
+    /// Parameters: (attacker, attackerPosition, targetPosition, weaponType, isAoE)
+    /// Consumed by HeroVFXController to spawn projectile / impact VFX.
+    /// </summary>
+    public static event Action<GameObject, Vector3, Vector3, WeaponType, bool> OnAttackFired;
+
     // ── Damage ────────────────────────────────────
     private float baseDamage;
     private float damageBonus = 0f;
@@ -97,12 +105,28 @@ public class DamageComponent : UnitComponent
 
     // ── Internal helpers ──────────────────────────
 
+    /// <summary>
+    /// Reads the currently equipped weapon type from EquipmentComponent.
+    /// Returns WeaponType.Sword as the melee default when no ranged weapon is found.
+    /// </summary>
+    private WeaponType GetCurrentWeaponType()
+    {
+        var eq = GetComponent<EquipmentComponent>();
+        if (eq?.equippedWeapon != null)
+            return eq.equippedWeapon.weaponType;
+        return WeaponType.Sword;
+    }
+
     private void DealSingleDamage(GameObject target)
     {
         if (target == null) return;
 
         if (target.TryGetComponent<HealthComponent>(out var health) && health.isDamagable)
         {
+            // Notify VFX listeners before damage lands so projectile launches immediately
+            OnAttackFired?.Invoke(gameObject, transform.position,
+                                  target.transform.position, GetCurrentWeaponType(), false);
+
             health.TakeDamage(new DamageData(TotalDamage, gameObject));
             Debug.Log($"[DamageComponent] {gameObject.name} → {target.name} " +
                       $"for {TotalDamage:F1} dmg");
@@ -114,15 +138,25 @@ public class DamageComponent : UnitComponent
         Collider2D[] hits = Physics2D.OverlapCircleAll(origin, AttackRange, targetLayer);
 
         int hitCount = 0;
+        GameObject firstTarget = null;
         foreach (Collider2D col in hits)
         {
             if (col.gameObject == gameObject) continue;     // don't hit self
 
             if (col.TryGetComponent<HealthComponent>(out var health) && health.isDamagable)
             {
+                if (firstTarget == null)
+                    firstTarget = col.gameObject;
                 health.TakeDamage(new DamageData(TotalDamage, gameObject));
                 hitCount++;
             }
+        }
+
+        // Notify VFX listeners once for the AoE burst (aim at primary target if any)
+        if (hitCount > 0 && firstTarget != null)
+        {
+            OnAttackFired?.Invoke(gameObject, transform.position,
+                                  firstTarget.transform.position, GetCurrentWeaponType(), true);
         }
 
         Debug.Log($"[DamageComponent] {gameObject.name} AoE hit {hitCount} target(s) " +

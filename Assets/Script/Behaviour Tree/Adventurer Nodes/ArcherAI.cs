@@ -36,8 +36,16 @@ public class ArcherAI : BehaviorTreeRunner
         root.AddChild(extractSeq);
 
         // ── Priority 1: ATTACK (adaptive) ────────────────────────────────────
+        // SelectCombatTarget unifies own detection + leader assist into one node:
+        //   • Leader  → scan + broadcast
+        //   • Follower → self-defence range (3 u) first, then leader's target,
+        //                then own scan fallback
+        // One sequence means one KiteAndAttack instance — no more two instances
+        // alternating TriggerMove calls and freezing the archer.
         var attackSeq = new Sequence(bb);
-        attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange, wallLayers));
+        attackSeq.AddChild(new SelectCombatTarget(bb, selfDefenseRange: 3f,
+                                                  detectionRange: enemyDetectionRange,
+                                                  wallLayers: wallLayers));
         attackSeq.AddChild(new AdaptiveAttack(bb, enemyLayer, kiteDistance, wallLayers));
         root.AddChild(attackSeq);
 
@@ -64,17 +72,13 @@ public class ArcherAI : BehaviorTreeRunner
         root.AddChild(worldItemSeq);
 
         // ── Priority 5: FOLLOW LEADER (followers only) ───────────────────────
-        // No NoRevealedEnemies guard here — attack is already Priority 1, so if the
-        // attack sequence fails for any reason (e.g. enemy unreachable / gave-up
-        // cooldown active) the hero should still be able to rejoin the group.
         var followSeq = new Sequence(bb);
         followSeq.AddChild(new FollowLeader(bb, 0.7f));
         root.AddChild(followSeq);
 
         // ── Priority 6: EXPLORE (leader + fallback for all) ──────────────────
         var exploreSeq = new Sequence(bb);
-        exploreSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
-        exploreSeq.AddChild(new FindFogCluster(bb, 50f));
+        exploreSeq.AddChild(new FindFogCluster(bb));
         exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);
 

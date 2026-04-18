@@ -14,6 +14,13 @@ public class HealthComponent : UnitComponent
     /// </summary>
     public static event Action<GameObject, float> OnDamageDealt;
 
+    /// <summary>
+    /// Fired whenever this unit is healed.
+    /// Parameters: (healer, healTarget) — healer may be null if the source is unknown.
+    /// Consumed by HeroVFXController to play heal particle effects.
+    /// </summary>
+    public static event Action<GameObject, GameObject> OnHealCast;
+
     // Optional flash effect — present on units that have a SpriteRenderer.
     private HitFlashEffect _flash;
 
@@ -75,8 +82,11 @@ public class HealthComponent : UnitComponent
             Die();
     }
 
-    /// <summary>Restores <paramref name="amount"/> HP, capped at max health.</summary>
-    public void Heal(float amount)
+    /// <summary>
+    /// Restores <paramref name="amount"/> HP, capped at max health.
+    /// Pass <paramref name="healer"/> so VFX listeners know the source.
+    /// </summary>
+    public void Heal(float amount, GameObject healer = null)
     {
         if (amount <= 0f) return;
         float before = currentHealth;
@@ -85,6 +95,9 @@ public class HealthComponent : UnitComponent
                   $"HP: {currentHealth:F1}/{maxHealth}");
 
         _flash?.FlashHeal();
+
+        // Notify VFX listeners
+        OnHealCast?.Invoke(healer, gameObject);
     }
 
     /// <summary>Resets health to max and re-enables damage. Used when the hero is respawned.</summary>

@@ -39,10 +39,16 @@ public class MageAI : BehaviorTreeRunner
         extractSeq.AddChild(new TriggerWin(bb));
         root.AddChild(extractSeq);
 
-        // ── Priority 1: ATTACK (staff required — mage only fires with a staff) ──
+        // ── Priority 1: ATTACK (staff required) ─────────────────────────────
+        // HasWeaponType gates the whole combat sequence so an unarmed mage
+        // gracefully skips to looting/following rather than trying to cast.
+        // SelectCombatTarget handles both own-detection and team-assist in one
+        // node — eliminates the dual-sequence thrashing of the old design.
         var attackSeq = new Sequence(bb);
         attackSeq.AddChild(new HasWeaponType(bb, WeaponType.Staff));
-        attackSeq.AddChild(new FindNearestRevealedEnemy(bb, enemyDetectionRange, wallLayers));
+        attackSeq.AddChild(new SelectCombatTarget(bb, selfDefenseRange: 3f,
+                                                  detectionRange: enemyDetectionRange,
+                                                  wallLayers: wallLayers));
         attackSeq.AddChild(new AdaptiveAttack(bb, enemyLayer, kiteDistance, wallLayers));
         root.AddChild(attackSeq);
 
@@ -69,8 +75,7 @@ public class MageAI : BehaviorTreeRunner
 
         // ── Priority 5: EXPLORE (leader + fallback for all) ──────────────────
         var exploreSeq = new Sequence(bb);
-        exploreSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
-        exploreSeq.AddChild(new FindFogCluster(bb, 50f));
+        exploreSeq.AddChild(new FindFogCluster(bb));
         exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);
 

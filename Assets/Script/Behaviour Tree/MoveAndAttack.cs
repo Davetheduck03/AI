@@ -154,6 +154,6 @@ public class MoveAndAttack : Node
     {
         UnitPathFollower pathFollower = self.GetComponent<UnitPathFollower>();
         if (pathFollower != null)
-            pathFollower.StopAllCoroutines();
+            pathFollower.StopPath();
     }
 }

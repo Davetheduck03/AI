@@ -71,6 +71,13 @@ public class FindNearestRevealedEnemy : Node
 
             _wasEngaged = true;
             bb.Set("target", nearest);
+
+            // Broadcast the leader's active combat target to the team so followers
+            // can assist via AssistLeaderInCombat even if the enemy is outside their
+            // own detection range.
+            if (FormationManager.Instance?.IsLeader(self) == true)
+                TeamBlackboard.Instance?.Set<Transform>("leaderCombatTarget", nearest);
+
             Debug.Log($"[FindNearestRevealedEnemy] Targeting {nearest.name} at distance {closestDist:F1}");
             return NodeState.Success;
         }
@@ -80,8 +87,13 @@ public class FindNearestRevealedEnemy : Node
         if (_wasEngaged)
         {
             _wasEngaged = false;
+
+            // Clear the team broadcast if this hero was the leader.
+            if (FormationManager.Instance?.IsLeader(self) == true)
+                TeamBlackboard.Instance?.Set<Transform>("leaderCombatTarget", null);
+
             var pf = self.GetComponent<UnitPathFollower>();
-            pf?.StopAllCoroutines();
+            pf?.StopPath();
             Debug.Log($"[FindNearestRevealedEnemy] {self.name} lost all enemies — stopping movement");
         }
 
