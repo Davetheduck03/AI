@@ -20,6 +20,18 @@ public class FindPlayer : Node
     // on the transition from "chasing" → "lost".
     private bool wasChasing = false;
 
+    // ── Scan throttle ────────────────────────────────────────────────────────
+    // Without throttling, FindGameObjectsWithTag + LOS raycasts run every BT
+    // tick (20 Hz × N enemies).  At the edge of detection range the player can
+    // flicker in/out of LOS between ticks, alternating Success→Failure every
+    // frame — the enemy oscillates between chasing and picking a new patrol
+    // point, producing visible twitching.  A small cache eliminates the flicker:
+    // once a player is spotted they remain "spotted" for ScanInterval, giving
+    // the chase sequence time to settle.
+    private const float ScanInterval  = 0.15f;
+    private float       _nextScanTime = float.MinValue;
+    private Transform   _cachedTarget = null;
+
     public FindPlayer(Blackboard bb, float range = 15f, LayerMask? blockingLayers = null) : base(bb)
     {
         detectionRange = range;
@@ -30,6 +42,23 @@ public class FindPlayer : Node
     {
         Transform self = bb.Get<Transform>("self");
         if (self == null) return NodeState.Failure;
+
+        // Return cached result if still within the scan window and the cached
+        // target is still alive and in range (don't hold the cache if the hero
+        // has run far out of detection range since the last scan).
+        if (Time.time < _nextScanTime && _cachedTarget != null)
+        {
+            if (_cachedTarget.gameObject != null &&
+                Vector3.Distance(self.position, _cachedTarget.position) <= detectionRange * 1.2f)
+            {
+                wasChasing = true;
+                bb.Set("target", _cachedTarget);
+                return NodeState.Success;
+            }
+            _cachedTarget = null;
+        }
+
+        _nextScanTime = Time.time + ScanInterval;
 
         // Check every hero tagged "Player" and pick the nearest one in LOS.
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
@@ -53,11 +82,14 @@ public class FindPlayer : Node
 
         if (bestTarget != null)
         {
+            _cachedTarget = bestTarget;
             wasChasing = true;
             bb.Set("target", bestTarget);
             Debug.Log($"Enemy spotted player at distance: {bestDist:F1}");
             return NodeState.Success;
         }
+
+        _cachedTarget = null;
 
         // Player left line-of-sight — stop any leftover chase movement so the
         // enemy doesn't ghost toward the last known position.
@@ -67,7 +99,7 @@ public class FindPlayer : Node
             var pf = self.GetComponent<UnitPathFollower>();
             pf?.StopPath();
             bb.Set<Transform>("target", null);
-            Debug.Log($"[FindPlayer] {self.name} lost sight of all players — dropping aggro");
+            Debug.Log($"[FindPlayer] {self.name} lost sight of all players — stopping chase.");
         }
 
         return NodeState.Failure;

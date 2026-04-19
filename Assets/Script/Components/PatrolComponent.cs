@@ -46,31 +46,36 @@ public class PatrolComponent : MonoBehaviour
     /// </summary>
     public PathNode GetRandomPatrolNode(int maxAttempts = 10)
     {
+        var grid = GridGenerator.Instance;
+
         for (int i = 0; i < maxAttempts; i++)
         {
             Vector2 randomOffset = Random.insideUnitCircle * patrolRadius;
-            Vector3 candidate = spawnPosition + new Vector3(randomOffset.x, randomOffset.y, 0f);
+            Vector3 candidate    = spawnPosition + new Vector3(randomOffset.x, randomOffset.y, 0f);
 
-            PathNode node = GridGenerator.Instance.GetNodeAtWorldPosition(candidate);
+            // Use the direct (silent) lookup only — random candidates frequently land
+            // on wall tiles and that is expected.  Calling GetNearestWalkableNode for
+            // every miss emits a warning per attempt (up to 10 × 20 Hz = 200/s).
+            PathNode node = grid.GetNodeAtWorldPosition(candidate);
+            if (node == null || !node.isWalkable) continue;
 
-            // Only use GetNearestWalkable as fallback, and validate it's still in radius
-            if (node == null)
-            {
-                node = GridGenerator.Instance.GetNearestWalkableNode(candidate, maxSearchRadius: 3);
-            }
-
-            if (node == null) continue;
-
-            // Reject if the found node is outside patrol radius
+            // Reject if the found node has drifted outside patrol radius.
             float distFromSpawn = Vector3.Distance(spawnPosition, node.transform.position);
             if (distFromSpawn > patrolRadius) continue;
 
             return node;
         }
 
-        // Fallback: return the node at spawn position itself
-        return GridGenerator.Instance.GetNodeAtWorldPosition(spawnPosition)
-            ?? GridGenerator.Instance.GetNearestWalkableNode(spawnPosition, maxSearchRadius: 5);
+        // Fallback 1: snap to spawn itself with a generous search radius.
+        PathNode spawnNode = grid.GetNodeAtWorldPosition(spawnPosition)
+                          ?? grid.GetNearestWalkableNode(spawnPosition, maxSearchRadius: 10);
+        if (spawnNode != null) return spawnNode;
+
+        // Fallback 2: spawn is truly in an unreachable area (map-edge, disconnected room).
+        // Warn once and return null so Patrol can idle rather than spam failures.
+        Debug.LogWarning($"[PatrolComponent] {name}: spawn at {spawnPosition} has no " +
+                         $"walkable tile within 10 u — enemy will idle at spawn.");
+        return null;
     }
 
     public void OnDrawGizmosSelected()

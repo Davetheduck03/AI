@@ -32,6 +32,25 @@ public class BehaviorTreeRunner : MonoBehaviour
     {
         // Remove this hero's team-board entry when they die / are cleaned up
         TeamBlackboard.Instance?.Remove("hero_" + gameObject.GetInstanceID());
+
+        // Clean up any hidden helper GameObjects owned by leaf nodes.
+        // Node is a plain C# class so it can't hook into Unity's lifecycle directly.
+        CleanupNodes(root);
+
+        if (_btFallbackGO != null)
+        {
+            Destroy(_btFallbackGO);
+            _btFallbackGO = null;
+        }
+    }
+
+    /// <summary>Walks the tree and calls Cleanup() on any node that exposes it.</summary>
+    private static void CleanupNodes(Node node)
+    {
+        if (node == null) return;
+        if (node is FollowLeader fl) fl.Cleanup();
+        foreach (var child in node.children)
+            CleanupNodes(child);
     }
 
     protected virtual Node BuildTree()
@@ -40,12 +59,16 @@ public class BehaviorTreeRunner : MonoBehaviour
         return null;  // Placeholder
     }
 
+    // BT tick rate — evaluate at most this many times per second.
+    // Heroes don't need 60 fps AI; 20 Hz is more than responsive enough for
+    // combat and exploration while cutting per-frame scanning work by 3×.
+    private const float BtTickInterval = 0.05f;   // 20 ticks / sec
+    private float _nextBtTick = 0f;
+
     // How many consecutive Failure ticks must occur before the fallback fires.
-    // SelectCombatTarget is throttled to 0.2 s, so on the tick right after a target
-    // dies the cached result is gone and the BT briefly returns Failure before the
-    // next sequence (FollowLeader / Explore) can pick up.  With a 60 fps update loop
-    // that transition window is 2-4 frames.  8 frames (≈ 0.13 s) bridges those blips.
-    private const int FailureStopThreshold = 8;
+    // At 20 Hz, 4 failures ≈ 0.2 s — enough to bridge the gap when a target dies
+    // and the next sequence hasn't started yet.
+    private const int FailureStopThreshold = 4;
     private int _consecutiveFailures = 0;
 
     // Reusable GO used as the leader-path target when the BT hard-fails for a follower.
@@ -54,6 +77,8 @@ public class BehaviorTreeRunner : MonoBehaviour
     private void Update()
     {
         if (root == null) return;
+        if (Time.time < _nextBtTick) return;
+        _nextBtTick = Time.time + BtTickInterval;
 
         NodeState result = root.Evaluate();
 

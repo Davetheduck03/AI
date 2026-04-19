@@ -8,7 +8,7 @@
 public class AttackTarget : Node
 {
     private LayerMask targetLayer;
-    private float lastAttackTime = 0f;
+    private float lastAttackTime = float.MinValue;
 
     // Range is no longer passed in — it's read live from DamageComponent
     public AttackTarget(Blackboard bb, LayerMask targetLayer = default) : base(bb)

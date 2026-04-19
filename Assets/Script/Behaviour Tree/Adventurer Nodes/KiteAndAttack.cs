@@ -52,7 +52,7 @@ public class KiteAndAttack : Node
 	private CombatState _state = CombatState.Closing;
 
 	private readonly LayerMask _targetLayer;
-	private float _lastAttackTime = 0f;
+	private float _lastAttackTime = float.MinValue;
 	private float _nextStrafeTime = 0f;
 	private float _nextMoveRetrigger = 0f;
 	private int _strafeDirection = 1;
@@ -103,6 +103,20 @@ public class KiteAndAttack : Node
 
 		if (self == null || _enemy == null || _enemy.gameObject == null)
 		{
+			Cleanup(self);
+			return NodeState.Failure;
+		}
+
+		// The Sequence is non-reactive — while this node is Running it is evaluated
+		// directly every tick, skipping SelectCombatTarget at index 0.  That means
+		// SelectCombatTarget never gets a chance to detect a dead enemy (HP = 0 but
+		// GameObject still alive during a death animation) and return Failure.
+		// Without this check the team freezes for up to ClosingTimeout (6 s) after
+		// combat while KiteAndAttack keeps circling a corpse.
+		var enemyHp = _enemy.GetComponent<HealthComponent>();
+		if (enemyHp != null && enemyHp.currentHealth <= 0)
+		{
+			Debug.Log($"[KiteAndAttack] {self.name}: target {_enemy.name} is dead — releasing combat immediately.");
 			Cleanup(self);
 			return NodeState.Failure;
 		}
@@ -334,11 +348,8 @@ public class KiteAndAttack : Node
 			Object.Destroy(_moveTargetGO);
 			_moveTargetGO = null;
 		}
-		_enemy = null;
-		// Clear shared blackboard keys so lower-priority sequences don't resume
-		// toward stale destinations after combat ends.
+		_enemy  = null;
+		_state  = CombatState.Closing;
 		bb.Set<Transform>("target", null);
-		bb.Set<Transform>("itemTarget", null);
-		bb.Set<WorldItem>("targetWorldItem", null);
 	}
 }

@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 public class Astar : MonoBehaviour
@@ -19,17 +16,14 @@ public class Astar : MonoBehaviour
         }
         Instance = this;
     }
-        // 2. CALLBACK VERSION (use this when you need the path NOW)
+        // Synchronous pathfinding — result delivered in the same frame.
+        // The old coroutine version yielded one frame before invoking the callback,
+        // which caused every hero to stand still for at least 16 ms on every path
+        // request.  With 4 heroes continuously requesting paths this created
+        // visible micro-stutters and the "pause before deciding" behaviour.
         public void FindPath(PathNode start, PathNode goal, System.Action<List<PathNode>> onComplete)
         {
-            StartCoroutine(FindPathRoutine(start, goal, onComplete));
-        }
-
-        private IEnumerator FindPathRoutine(PathNode start, PathNode goal, System.Action<List<PathNode>> onComplete)
-        {
-            List<PathNode> path = CalculatePath(start, goal);
-            yield return null;
-            onComplete?.Invoke(path);
+            onComplete?.Invoke(CalculatePath(start, goal));
         }
     
 
@@ -37,44 +31,56 @@ public class Astar : MonoBehaviour
     // This makes nodes near walls more expensive so A* naturally routes
     // through the centre of corridors.
     //
-    // 0.35 was too low: a single-wall-neighbour node only cost 0.35 extra,
-    // which is less than the ~1-unit detour to reach the corridor centre, so
-    // short paths still hugged the wall.  1.2 makes a wall-edge node
-    // (1 wall neighbour) cost 1.2 extra — more than the detour cost for any
-    // realistic corridor — without making wall-adjacent tiles impassable in
-    // 1-tile-wide passages where there is no penalty-free alternative.
-    private const float WallProximityPenalty = 1.2f;
+    // Each wall-neighbour tile pays this cost once per step through it.
+    // A corridor-edge tile (1 wall neighbour) now costs 1 + 3 = 4 per step,
+    // vs 1 for an open-centre tile.  This is high enough that A* routes
+    // through even a 2-step detour to stay centre rather than hug a wall,
+    // while still allowing wall-adjacent tiles in 1-tile-wide corridors where
+    // there is no penalty-free alternative (every tile in the corridor has
+    // 2 wall neighbours, so all candidates pay the same penalty and the
+    // shortest path is still chosen correctly).
+    private const float WallProximityPenalty = 3.0f;
 
     private List<PathNode> CalculatePath(PathNode start, PathNode goal)
     {
-        var openSet = new List<PathNode>();
+        var openSet   = new List<PathNode>();
         var closedSet = new HashSet<PathNode>();
 
-        // Reset all nodes
-        foreach (var node in allNodes)
-        {
-            node.gCost = Mathf.Infinity;
-            node.parent = null;
-        }
+        // Track every node we write to so we only reset those at the end,
+        // instead of iterating the entire grid (O(grid size)) on every call.
+        var touched = new List<PathNode>();
 
+        start.gCost  = 0f;
+        start.hCost  = Heuristic(start, goal);
+        start.parent = null;
         openSet.Add(start);
-        start.gCost = 0;
-        start.hCost = Heuristic(start, goal);
+        touched.Add(start);
 
         while (openSet.Count > 0)
         {
-            var current = openSet.OrderBy(n => n.fCost).First();
+            // Linear-scan for the lowest-fCost node.
+            // Replaces openSet.OrderBy(n => n.fCost).First() which allocates an
+            // IEnumerable and sorts the whole list on every iteration — O(n log n)
+            // with GC pressure.  A plain loop is O(n) and allocation-free.
+            PathNode current = openSet[0];
+            for (int k = 1; k < openSet.Count; k++)
+                if (openSet[k].fCost < current.fCost) current = openSet[k];
+
             openSet.Remove(current);
             closedSet.Add(current);
 
             if (current == goal)
             {
-                return ReconstructPath(goal); // Success!
+                var path = ReconstructPath(goal);
+                // Clean up only the nodes we actually touched — much cheaper than
+                // resetting the whole grid at the start of every call.
+                foreach (var n in touched) { n.gCost = Mathf.Infinity; n.parent = null; }
+                return path;
             }
 
             foreach (var neighbor in current.neighbors)
             {
-                if (closedSet.Contains(neighbor) || !neighbor.isWalkable)
+                if (neighbor == null || closedSet.Contains(neighbor) || !neighbor.isWalkable)
                     continue;
 
                 float moveCost    = Vector2.Distance(
@@ -90,9 +96,13 @@ public class Astar : MonoBehaviour
 
                 if (tentativeG < neighbor.gCost)
                 {
+                    // First time we write to this neighbour — track it for cleanup.
+                    if (neighbor.gCost == Mathf.Infinity)
+                        touched.Add(neighbor);
+
                     neighbor.parent = current;
-                    neighbor.gCost = tentativeG;
-                    neighbor.hCost = Heuristic(neighbor, goal);
+                    neighbor.gCost  = tentativeG;
+                    neighbor.hCost  = Heuristic(neighbor, goal);
 
                     if (!openSet.Contains(neighbor))
                         openSet.Add(neighbor);
@@ -100,6 +110,8 @@ public class Astar : MonoBehaviour
             }
         }
 
+        // No path found — still reset touched nodes so next call starts clean.
+        foreach (var n in touched) { n.gCost = Mathf.Infinity; n.parent = null; }
         return new List<PathNode>();
     }
 

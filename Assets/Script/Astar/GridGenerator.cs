@@ -65,7 +65,9 @@ public class GridGenerator : MonoBehaviour
                 nodeObj.name = $"Node ({x},{y})";
                 PathNode node = nodeObj.GetComponent<PathNode>();
                 node.gridPosition = new Vector2Int(x, y);
-                node.isWalkable = true;
+                node.isWalkable   = true;
+                node.gCost        = Mathf.Infinity;   // sentinel for A* lazy-reset
+                node.parent       = null;
                 grid[gridX, gridY] = node;
                 Astar.Instance.allNodes.Add(node);
             }
@@ -97,10 +99,7 @@ public class GridGenerator : MonoBehaviour
 
                     PathNode node = GetNodeAt(checkX, checkY);
                     if (node != null && node.isWalkable)
-                    {
-                        Debug.Log($"Found nearest walkable node at radius {radius}: {node.name}");
                         return node;
-                    }
                 }
             }
         }

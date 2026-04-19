@@ -373,9 +373,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   fogManager: {fileID: 0}
-  clusterRadius: 8
-  minClusterSize: 7
-  sampleDistance: 5
+  clusterRadius: 4
+  minClusterSize: 3
+  sampleDistance: 6
   healthThreshold: 0.5
 --- !u!114 &8906768342283508799
 MonoBehaviour:

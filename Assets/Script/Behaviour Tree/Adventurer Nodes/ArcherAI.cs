@@ -73,7 +73,7 @@ public class ArcherAI : BehaviorTreeRunner
 
         // ── Priority 5: FOLLOW LEADER (followers only) ───────────────────────
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new FollowLeader(bb, 0.7f));
+        followSeq.AddChild(new FollowLeader(bb));
         root.AddChild(followSeq);
 
         // ── Priority 6: EXPLORE (leader + fallback for all) ──────────────────

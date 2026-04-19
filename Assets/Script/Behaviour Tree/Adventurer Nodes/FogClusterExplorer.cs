@@ -3,9 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 
 /// <summary>
-/// Simple exploration system that finds clusters of unrevealed fog.
-/// Better for open/corridor-style maps than rigid room detection.
-/// Prioritizes exploring larger fog clusters.
+/// Finds clusters of unrevealed fog tiles and ranks them for exploration.
+///
+/// Cluster radius is intentionally small (5 u) so heroes target precise local
+/// pockets of fog rather than vague centroids of half-explored room groups.
+/// A maxDistance parameter lets callers restrict the search to a local radius,
+/// enabling the two-pass "explore locally → backtrack globally" pattern used
+/// by FindFogCluster.
 /// </summary>
 public class FogClusterExplorer : MonoBehaviour
 {
@@ -13,8 +17,11 @@ public class FogClusterExplorer : MonoBehaviour
     [SerializeField] private FogOfWarManager fogManager;
 
     [Header("Cluster Settings")]
-    [SerializeField] private float clusterRadius = 10f;
-    [SerializeField] private int minClusterSize = 10;
+    // Radius used to group nearby fog tiles into one cluster.
+    // Smaller = more granular targets; heroes aim at precise pockets rather
+    // than room-sized blobs whose centre may already be explored.
+    [SerializeField] private float clusterRadius  = 5f;
+    [SerializeField] private int   minClusterSize = 6;
     [SerializeField] private float sampleDistance = 3f;
 
     [Header("Priority Settings")]
@@ -23,22 +30,23 @@ public class FogClusterExplorer : MonoBehaviour
     private void Start()
     {
         if (fogManager == null)
-        {
             fogManager = FindAnyObjectByType<FogOfWarManager>();
-        }
     }
 
     /// <summary>
     /// Returns up to <paramref name="maxResults"/> cluster centres ranked by size
-    /// (largest unexplored area first), filtered by health and minimum distance.
-    /// Falls back to the nearest individual fog tile when there aren't enough clusters.
-    /// Used by FindFogCluster for human-like spread exploration.
+    /// (largest unexplored area first), filtered by health, minimum distance, and
+    /// an optional maximum distance.  When <paramref name="maxDistance"/> is set,
+    /// only clusters within that radius of <paramref name="fromPosition"/> are
+    /// considered — pass <c>float.MaxValue</c> for an unlimited global search.
+    /// Falls back to the nearest individual fog tile when clusters are sparse.
     /// </summary>
     public List<Vector3> GetRankedTargets(
         Vector3 fromPosition,
         float   currentHealthPercent,
         float   minDistance,
-        int     maxResults = 6)
+        int     maxResults  = 6,
+        float   maxDistance = float.MaxValue)
     {
         var result = new List<Vector3>();
         if (fogManager == null) return result;
@@ -51,8 +59,10 @@ public class FogClusterExplorer : MonoBehaviour
 
         if (minDistance > 0f)
             valid = valid.Where(c => c.distanceFromPlayer >= minDistance).ToList();
+        if (maxDistance < float.MaxValue)
+            valid = valid.Where(c => c.distanceFromPlayer <= maxDistance).ToList();
 
-        // Largest clusters first — most unexplored area wins
+        // Largest clusters first — most unexplored area wins.
         valid.Sort((a, b) => b.size.CompareTo(a.size));
 
         foreach (var c in valid)
@@ -61,11 +71,12 @@ public class FogClusterExplorer : MonoBehaviour
             if (result.Count >= maxResults) return result;
         }
 
-        // Pad with individual fog tiles when clusters are sparse
+        // Pad with individual fog tiles when clusters are sparse.
+        // Only add a tile-fallback if it also satisfies the distance constraints.
         if (result.Count < maxResults)
         {
-            Vector3? extra = GetNearestFogBeyond(unrevealedTiles, fromPosition, minDistance);
-            extra ??= GetNearestFog(unrevealedTiles, fromPosition);
+            Vector3? extra = GetNearestFogInRange(unrevealedTiles, fromPosition,
+                                                  minDistance, maxDistance);
             if (extra.HasValue && !result.Contains(extra.Value))
                 result.Add(extra.Value);
         }
@@ -73,88 +84,31 @@ public class FogClusterExplorer : MonoBehaviour
         return result;
     }
 
-    /// <summary>
-    /// Get the best fog cluster to explore from current position.
-    /// Returns center of largest nearby fog cluster, considering health.
-    /// Clusters closer than <paramref name="minDistance"/> are skipped; falls back to
-    /// the nearest individual unrevealed tile when no qualifying cluster exists.
-    /// </summary>
-    public Vector3? GetBestExplorationTarget(Vector3 fromPosition, float currentHealthPercent, float minDistance = 0f)
-    {
-        if (fogManager == null) return null;
-
-        List<Vector3> unrevealedTiles = fogManager.GetUnrevealedPositions();
-
-        if (unrevealedTiles.Count == 0)
-        {
-            Debug.Log("FogClusterExplorer: No unrevealed tiles left");
-            return null;
-        }
-
-        List<FogCluster> clusters = FindFogClusters(unrevealedTiles, fromPosition);
-
-        if (clusters.Count == 0)
-        {
-            return GetNearestFog(unrevealedTiles, fromPosition);
-        }
-
-        List<FogCluster> validClusters = FilterClustersByHealth(clusters, currentHealthPercent);
-
-        if (validClusters.Count == 0)
-        {
-            Debug.Log("FogClusterExplorer: All clusters too dangerous for current health");
-            return GetNearestFog(unrevealedTiles, fromPosition);
-        }
-
-        // Skip clusters that are too close — we'd arrive without meaningful exploration.
-        if (minDistance > 0f)
-            validClusters = validClusters.Where(c => c.distanceFromPlayer >= minDistance).ToList();
-
-        if (validClusters.Count == 0)
-        {
-            // All clusters are within minDistance; fall back to the nearest individual tile
-            // that is at least minDistance away so the hero actually has to walk somewhere.
-            Vector3? fallback = GetNearestFogBeyond(unrevealedTiles, fromPosition, minDistance);
-            return fallback ?? GetNearestFog(unrevealedTiles, fromPosition);
-        }
-
-        FogCluster bestCluster = validClusters.OrderBy(c => c.distanceFromPlayer).First();
-
-        Debug.Log($"FogClusterExplorer: Targeting cluster of {bestCluster.size} tiles at {bestCluster.center}");
-        return bestCluster.center;
-    }
+    // ── Internal helpers ──────────────────────────────────────────────────────
 
     private List<FogCluster> FindFogClusters(List<Vector3> unrevealedTiles, Vector3 fromPosition)
     {
-        List<FogCluster> clusters = new List<FogCluster>();
-        HashSet<Vector3> processedTiles = new HashSet<Vector3>();
-
-        List<Vector3> samplePoints = SampleFogPoints(unrevealedTiles);
+        var clusters       = new List<FogCluster>();
+        var processedTiles = new HashSet<Vector3>();
+        var samplePoints   = SampleFogPoints(unrevealedTiles);
 
         foreach (Vector3 samplePoint in samplePoints)
         {
             if (processedTiles.Contains(samplePoint)) continue;
 
             List<Vector3> clusterTiles = GetNearbyFog(samplePoint, unrevealedTiles, clusterRadius);
-
             if (clusterTiles.Count < minClusterSize) continue;
 
             foreach (Vector3 tile in clusterTiles)
-            {
                 processedTiles.Add(tile);
-            }
 
             Vector3 clusterCenter = CalculateCenter(clusterTiles);
-            float distance = Vector3.Distance(fromPosition, clusterCenter);
-
-            FogCluster cluster = new FogCluster
+            clusters.Add(new FogCluster
             {
-                center = clusterCenter,
-                size = clusterTiles.Count,
-                distanceFromPlayer = distance
-            };
-
-            clusters.Add(cluster);
+                center             = clusterCenter,
+                size               = clusterTiles.Count,
+                distanceFromPlayer = Vector3.Distance(fromPosition, clusterCenter)
+            });
         }
 
         return clusters;
@@ -162,77 +116,50 @@ public class FogClusterExplorer : MonoBehaviour
 
     private List<Vector3> SampleFogPoints(List<Vector3> allFog)
     {
-        List<Vector3> samples = new List<Vector3>();
-
-        for (int i = 0; i < allFog.Count; i += Mathf.Max(1, (int)sampleDistance))
-        {
+        var samples = new List<Vector3>();
+        int step    = Mathf.Max(1, (int)sampleDistance);
+        for (int i = 0; i < allFog.Count; i += step)
             samples.Add(allFog[i]);
-        }
-
         return samples;
     }
 
     private List<Vector3> GetNearbyFog(Vector3 center, List<Vector3> allFog, float radius)
     {
-        List<Vector3> nearbyFog = new List<Vector3>();
-
+        var nearby = new List<Vector3>();
         foreach (Vector3 fog in allFog)
-        {
             if (Vector3.Distance(center, fog) <= radius)
-            {
-                nearbyFog.Add(fog);
-            }
-        }
-
-        return nearbyFog;
+                nearby.Add(fog);
+        return nearby;
     }
 
     private List<FogCluster> FilterClustersByHealth(List<FogCluster> clusters, float healthPercent)
     {
-        if (healthPercent >= healthThreshold)
-        {
-            return clusters;
-        }
-
+        if (healthPercent >= healthThreshold) return clusters;
         int maxSafeSize = Mathf.RoundToInt(minClusterSize * 1.5f);
-        return clusters.Where(c => c.size <= maxSafeSize).ToList();
+        var safeOnly = clusters.Where(c => c.size <= maxSafeSize).ToList();
+        // Prefer small clusters when low HP, but never block exploration entirely.
+        // If all remaining fog is in large clusters (common late-game), fall back to
+        // the full list so the hero still moves rather than standing still.
+        return safeOnly.Count > 0 ? safeOnly : clusters;
     }
 
-    private Vector3? GetNearestFog(List<Vector3> fogTiles, Vector3 fromPosition)
+    /// <summary>Returns the nearest fog tile within [minDistance, maxDistance].</summary>
+    private Vector3? GetNearestFogInRange(List<Vector3> fogTiles, Vector3 fromPosition,
+                                          float minDist, float maxDist)
     {
-        if (fogTiles.Count == 0) return null;
-
-        Vector3 nearest = fogTiles[0];
-        float closestDist = Vector3.Distance(fromPosition, nearest);
+        Vector3? nearest    = null;
+        float    closestDist = float.MaxValue;
 
         foreach (Vector3 fog in fogTiles)
         {
             float dist = Vector3.Distance(fromPosition, fog);
+            if (dist < minDist || dist > maxDist) continue;
             if (dist < closestDist)
             {
                 closestDist = dist;
-                nearest = fog;
+                nearest     = fog;
             }
         }
-
-        return nearest;
-    }
-
-    private Vector3? GetNearestFogBeyond(List<Vector3> fogTiles, Vector3 fromPosition, float minDistance)
-    {
-        Vector3? nearest = null;
-        float closestDist = float.MaxValue;
-
-        foreach (Vector3 fog in fogTiles)
-        {
-            float dist = Vector3.Distance(fromPosition, fog);
-            if (dist >= minDistance && dist < closestDist)
-            {
-                closestDist = dist;
-                nearest = fog;
-            }
-        }
-
         return nearest;
     }
 
@@ -240,18 +167,14 @@ public class FogClusterExplorer : MonoBehaviour
     {
         if (positions.Count == 0) return Vector3.zero;
 
-        // Compute the arithmetic mean first…
         Vector3 sum = Vector3.zero;
-        foreach (Vector3 pos in positions)
-            sum += pos;
+        foreach (Vector3 pos in positions) sum += pos;
         Vector3 avg = sum / positions.Count;
 
-        // …then return the actual tile closest to that mean.
-        // Returning the raw average produces fractional coordinates like (5.22, 21.83)
-        // that fall between tile centres and have no walkable PathNode, causing the
-        // "not on walkable tile, finding nearest" spam and unstable navigation.
-        Vector3 closest = positions[0];
-        float bestDist = Vector3.Distance(avg, closest);
+        // Return the actual tile closest to the mean so the result snaps to a
+        // valid tile centre rather than a fractional world position.
+        Vector3 closest  = positions[0];
+        float   bestDist = Vector3.Distance(avg, closest);
         for (int i = 1; i < positions.Count; i++)
         {
             float d = Vector3.Distance(avg, positions[i]);
@@ -263,7 +186,7 @@ public class FogClusterExplorer : MonoBehaviour
     private class FogCluster
     {
         public Vector3 center;
-        public int size;
-        public float distanceFromPlayer;
+        public int     size;
+        public float   distanceFromPlayer;
     }
 }

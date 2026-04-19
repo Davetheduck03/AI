@@ -83,8 +83,18 @@ public class SeparationBehavior : MonoBehaviour
                 // Disable during combat — heroes must hold their attack positions.
                 // During movement, scale way down so separation doesn't oppose the path.
                 float scale = moving ? MovingStrengthScale : (inCombat ? 0f : 1f);
-                transform.position +=
-                    (Vector3)(push.normalized * separationSpeed * scale * Time.deltaTime);
+                if (scale > 0f)
+                {
+                    Vector3 delta  = (Vector3)(push.normalized * separationSpeed * scale * Time.deltaTime);
+                    Vector3 newPos = transform.position + delta;
+                    // Don't push heroes into walls — only apply the separation if the
+                    // target position lies on a walkable tile. This prevents heroes from
+                    // being nudged slightly into wall tiles in narrow corridors, which
+                    // causes A* to spend every call snapping the start position back out.
+                    var landingNode = GridGenerator.Instance?.GetNodeAtWorldPosition(newPos);
+                    if (landingNode != null && landingNode.isWalkable)
+                        transform.position = newPos;
+                }
             }
         }
 
@@ -133,8 +143,16 @@ public class SeparationBehavior : MonoBehaviour
 
             if (yieldDir.sqrMagnitude > 0.001f)
             {
-                transform.position +=
-                    (Vector3)(yieldDir.normalized * yieldSpeed * Time.deltaTime);
+                // Mirror the separation block's walkability guard: never step
+                // the yielding hero into a wall tile.  Without this, a hero
+                // pressed toward a wall in a narrow corridor gets nudged into
+                // a non-walkable cell — A* then snaps the start position back
+                // on every call, producing a visible stutter.
+                Vector3 newPos = transform.position +
+                                 (Vector3)(yieldDir.normalized * yieldSpeed * Time.deltaTime);
+                var landingNode = GridGenerator.Instance?.GetNodeAtWorldPosition(newPos);
+                if (landingNode != null && landingNode.isWalkable)
+                    transform.position = newPos;
             }
         }
     }
@@ -161,7 +179,7 @@ public class SeparationBehavior : MonoBehaviour
     {
         Gizmos.color = new Color(1f, 0.6f, 0f, 0.25f);
         Gizmos.DrawWireSphere(transform.position, separationRadius);
-        Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.15f);
+        Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.2f);
         Gizmos.DrawWireSphere(transform.position, yieldRadius);
     }
 #endif

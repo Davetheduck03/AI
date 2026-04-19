@@ -55,6 +55,11 @@ public class EvaluateNearbyItems : Node
 			float dist = Vector2.Distance(self.position, worldItem.transform.position);
 			if (dist > searchRange) continue;
 
+			// Skip items not on a walkable tile — the hero can't reach them and
+			// MoveTowardsTarget would spin for 2.5 s before giving up.
+			var itemNode = GridGenerator.Instance?.GetNodeAtWorldPosition(worldItem.transform.position);
+			if (itemNode == null || !itemNode.isWalkable) continue;
+
 			ItemSO candidate = worldItem.item;
 
 			// Skip weapons this hero class cannot equip
@@ -92,7 +97,6 @@ public class EvaluateNearbyItems : Node
 	{
 		BaseUnit unit = self.GetComponent<BaseUnit>();
 		if (unit == null) return null;
-		HeroSO heroData = unit.unitData as HeroSO;
-		return heroData?.adventurerClass;
+		return (unit.unitData as HeroSO)?.adventurerClass;
 	}
 }

@@ -8,7 +8,11 @@ using UnityEngine;
 public class MoveAndAttack : Node
 {
     private LayerMask targetLayer;
-    private float lastAttackTime = 0f;
+    // float.MinValue means Time.time - float.MinValue is always >> any AttackCooldown,
+    // so the first attack fires immediately regardless of when in the session this
+    // unit first acquires a target (avoids the false cooldown from initialising to 0f
+    // when Time.time < AttackCooldown at game start).
+    private float lastAttackTime = float.MinValue;
     private Transform lastTarget = null;
     private bool arrived = false;
 
@@ -42,20 +46,45 @@ public class MoveAndAttack : Node
         if (target.gameObject == null)
             return NodeState.Failure;
 
+        // Same non-reactive Sequence issue as KiteAndAttack: while MoveAndAttack
+        // is Running the Sequence skips SelectCombatTarget, so a corpse (HP = 0
+        // but GO alive during death animation) is never detected by SelectCombatTarget.
+        // Bail out here immediately rather than chasing the corpse for MovementTimeout (4 s).
+        var targetHp = target.GetComponent<HealthComponent>();
+        if (targetHp != null && targetHp.currentHealth <= 0)
+        {
+            arrived    = false;
+            lastTarget = null;
+            StopMovement(self);
+            bb.Set<Transform>("target", null);
+            return NodeState.Failure;
+        }
+
         float dist = Vector2.Distance(self.position, target.position);
 
         // Approach distance comes from the unit's current weapon range — updates
         // automatically when a new weapon is equipped mid-run.
         float effectiveRange = damageComp.AttackRange;
 
-        // New target — re-trigger movement
+        // New target — check if already in range before triggering pathfinding.
+        // The old code always called TriggerMovement + returned Running on first acquisition,
+        // even when the target was right next to the unit.  This wasted one full BT tick
+        // and could restart a path that immediately gets cancelled.
         if (target != lastTarget)
         {
-            arrived = false;
             lastTarget = target;
-            movementStartTime = Time.time;
-            TriggerMovement(self, target);
-            return NodeState.Running;
+            if (dist <= effectiveRange)
+            {
+                // Already in attack range — skip pathfinding, fall through to attack now.
+                arrived = true;
+            }
+            else
+            {
+                arrived = false;
+                movementStartTime = Time.time;
+                TriggerMovement(self, target);
+                return NodeState.Running;
+            }
         }
 
         // Target drifted away after arrival — re-trigger movement.

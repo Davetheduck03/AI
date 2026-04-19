@@ -70,7 +70,7 @@ public class KnightAI : BehaviorTreeRunner
 
         // ── Priority 4: FOLLOW LEADER (followers only) ───────────────────────
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new FollowLeader(bb, 0.7f));
+        followSeq.AddChild(new FollowLeader(bb));
         root.AddChild(followSeq);
 
         // ── Priority 5: EXPLORE (leader + fallback for all) ──────────────────

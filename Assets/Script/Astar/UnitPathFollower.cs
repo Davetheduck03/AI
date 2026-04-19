@@ -272,8 +272,7 @@ public class UnitPathFollower : MonoBehaviour
                     }
                 }
 
-                // Pre-avoidance path direction — used for the wall raycast so that a
-                // momentary avoidance steer toward a wall doesn't fire a false repath.
+                // direction — lookahead-blended, used for movement and ally avoidance.
                 Vector2 direction = (lookaheadTarget - currentPos).normalized;
 
                 // ── Ally avoidance steering ───────────────────────────────────
@@ -284,30 +283,14 @@ public class UnitPathFollower : MonoBehaviour
                 if (avoidance.sqrMagnitude > 0.001f)
                     moveDirection = (direction + avoidance).normalized;
 
-                // Structural obstacle raycast (walls / unwalkable nodes).
-                // IMPORTANT: use the pre-avoidance `direction`, not `moveDirection`.
-                // The avoidance offset can temporarily point toward a nearby wall when
-                // steering around an ally at a corner; using the avoidance-modified
-                // direction at 1.5 f caused false wall detections that triggered
-                // rapid RecalculatePath calls → hero twitching.
-                // 0.8 f is enough to detect any immediately-adjacent wall tile while
-                // avoiding false positives from walls that are a full tile away.
-                var hit = Physics2D.Raycast(currentPos, direction, 0.8f,
-                                            LayerMask.GetMask("Node"));
-                Debug.DrawRay(currentPos, direction * 0.8f, Color.cyan, Time.deltaTime);
-
-                if (hit.collider != null)
-                {
-                    var hitNode = hit.collider.GetComponent<PathNode>();
-                    if (hitNode != null && !hitNode.isWalkable)
-                    {
-                        IsFollowingPath = false;
-                        PathNode goal = path[path.Count - 1];
-                        if (goal != null && goal)
-                            RecalculatePath(goal);
-                        yield break;
-                    }
-                }
+                // NOTE: The per-frame wall raycast has been removed.
+                // A* already guarantees the path is wall-free, and the waypoint
+                // walkability check below handles any dynamic tile changes.
+                // The raycast was causing false positives at every corner: the
+                // direction from a corner tile to the next waypoint clips the
+                // inner-corner wall node within the cast distance, triggering
+                // RecalculatePath repeatedly and stalling the hero for 1-3 s.
+                // Wall-proximity routing is handled by the A* penalty instead.
 
                 Vector2 pos = transform.position;
                 pos += moveDirection * moveSpeed * Time.deltaTime;
@@ -442,10 +425,14 @@ public class UnitPathFollower : MonoBehaviour
             PathNode node   = gridGen.GetNodeAtWorldPosition(sample);
             if (node == null || !node.isWalkable) return false;
 
-            // Reject shortcuts that pass through wall-adjacent tiles (2+ wall
-            // neighbours).  Tiles with fewer than 2 wall neighbours sit in open
-            // space where a straight-line shortcut is genuinely safe to take.
-            if (CountWallNeighbors(node) >= 2) return false;
+            // Reject shortcuts that pass through corner/edge tiles (3+ wall
+            // neighbours).  These are inner-corner tiles where a straight-line
+            // shortcut would hug the wall.  Tiles with only 2 wall neighbours
+            // sit in the centre of a corridor (one wall on each side) and are
+            // safe to shortcut through — previously rejecting them at >= 2
+            // prevented SmoothenPath from ever compressing straight-corridor
+            // segments, leaving heroes with unnecessarily dense waypoint lists.
+            if (CountWallNeighbors(node) >= 3) return false;
         }
         return true;
     }
@@ -469,10 +456,20 @@ public class UnitPathFollower : MonoBehaviour
     /// each other for pathfinding purposes (SeparationBehavior handles physical spacing).
     /// This lets melee followers path through the leader to reach an enemy in a corridor
     /// instead of deadlocking behind them indefinitely.
+    ///
+    /// The final goal node is also exempt: the occupant there is either the attack target
+    /// itself or an expected destination.  Treating the goal as blocked causes a 0.9 s+
+    /// stall before the unit can attack (the WaitForSeconds loop fires 3 times before
+    /// push-through) which manifests as the unit freezing just outside melee range.
     /// </summary>
     private Collider2D GetBlockerCollider(PathNode node)
     {
         if (node == null || !node) return null;
+
+        // Never block on the final goal node — the occupant there is the attack target
+        // or is otherwise expected.  Blocking here is what causes the pre-attack stall.
+        if (path != null && path.Count > 0 && node == path[path.Count - 1])
+            return null;
 
         const float checkRadius = 0.35f;
         int mask = LayerMask.GetMask("Enemy");

@@ -5,7 +5,7 @@ public enum NodeState { Success, Failure, Running }
 public abstract class Node
 {
     protected Blackboard bb;
-    protected List<Node> children = new List<Node>();
+    protected internal List<Node> children = new List<Node>();
     public string name;
 
     protected Node(Blackboard blackboard)

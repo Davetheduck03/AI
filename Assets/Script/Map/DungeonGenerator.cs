@@ -36,8 +36,12 @@ public class DungeonGenerator : MonoBehaviour
     [SerializeField] private int mapHeight = 60;
 
     [Header("Room Settings")]
-    [SerializeField] private int minRoomSize = 6;
-    [SerializeField] private int maxRoomSize = 14;
+    // Minimum 8×8 so four heroes always have open floor to spread into before
+    // reaching a corridor.  Rooms smaller than ~6 tiles force heroes into the
+    // corridor immediately, causing SeparationBehavior to fight the path-follower
+    // and producing visible twitching near room entrances.
+    [SerializeField] private int minRoomSize = 8;
+    [SerializeField] private int maxRoomSize = 16;
     [Tooltip("BSP split depth — more depth means more, smaller rooms.")]
     [SerializeField] private int bspDepth = 4;
 
@@ -289,6 +293,7 @@ public class DungeonGenerator : MonoBehaviour
         for (int dx = -1; dx <= 1; dx++)
             for (int dy = -1; dy <= 1; dy++)
             {
+                if (dx == 0 && dy == 0) continue;
                 int nx = x + dx, ny = y + dy;
                 if (nx >= 0 && ny >= 0 && nx < mapWidth && ny < mapHeight && _floorMap[nx, ny])
                     return true;

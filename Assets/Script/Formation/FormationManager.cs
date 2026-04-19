@@ -67,8 +67,6 @@ public class FormationManager : MonoBehaviour
     private Vector3 _cachedEnemyDir     = Vector3.zero;   // zero = no visible enemy
     private const float EnemyDirInterval = 0.25f;
 
-    private float _nextRefresh = 0f;
-    private const float RefreshInterval = 3f;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -89,12 +87,9 @@ public class FormationManager : MonoBehaviour
 
     private void Update()
     {
-        // Refresh slots periodically (picks up weapon swaps, etc.)
-        if (Time.time >= _nextRefresh)
-        {
-            _nextRefresh = Time.time + RefreshInterval;
-            RefreshSlots();
-        }
+        // Slots are only assigned on spawn and on death — never on a timer.
+        // Periodic refresh was removed to prevent mid-run leadership swaps
+        // caused by relic HP bonuses or weapon pickups altering the sort order.
 
         // Scan for visible enemies periodically (cheaper than every frame).
         if (Time.time >= _nextEnemyDirCheck)
@@ -189,19 +184,43 @@ public class FormationManager : MonoBehaviour
     {
         _heroes.RemoveAll(h => h == null || h.gameObject == null);
 
-        // Melee (non-bow) heroes go to the front; bow heroes go to the back.
-        // Within each group the highest max-HP hero gets the lower slot index.
+        // Remember who the current leader is before we reassign anything.
+        // If the leader is still alive they keep slot 0 — we never transfer
+        // leadership due to a weapon swap or relic pickup mid-run.
+        // Leadership only changes when the leader dies (OnUnitDied removes them
+        // from _heroes, so GetLeader returns null and we re-elect normally).
+        Transform existingLeader = GetLeader();
+        bool keepLeader = existingLeader != null && _heroes.Contains(existingLeader);
+
+        // Sort all heroes by role priority, then by max HP as a tiebreaker.
         var sorted = _heroes
             .OrderBy(h  => RolePriority(h))
             .ThenByDescending(h => MaxHealth(h))
             .ToList();
 
         _slotMap.Clear();
-        for (int i = 0; i < sorted.Count; i++)
-            _slotMap[sorted[i]] = i;
+
+        if (keepLeader)
+        {
+            // Pin the existing leader at slot 0, then assign the remaining
+            // heroes to slots 1-N in their sorted order.
+            _slotMap[existingLeader] = 0;
+            int nextSlot = 1;
+            foreach (var h in sorted)
+            {
+                if (h == existingLeader) continue;
+                _slotMap[h] = nextSlot++;
+            }
+        }
+        else
+        {
+            // Fresh start or leader died — elect from scratch.
+            for (int i = 0; i < sorted.Count; i++)
+                _slotMap[sorted[i]] = i;
+        }
 
         string slotSummary = string.Join(", ",
-            sorted.Select((h, i) => $"[{i}]{h.name}({(RolePriority(h) == 0 ? "melee" : "bow")})"));
+            sorted.Select(h => $"[{_slotMap[h]}]{h.name}"));
         Debug.Log($"[FormationManager] Slots: {slotSummary}");
     }
 
@@ -297,12 +316,19 @@ public class FormationManager : MonoBehaviour
         var eq = hero.GetComponent<EquipmentComponent>();
         var wt = eq?.equippedWeapon?.weaponType;
 
-        if (wt == WeaponType.Bow)   return 3;  // archer — furthest back
+        if (wt == WeaponType.Bow) return 3;  // archer — furthest back
+
+        // Staff: healer if it has a HealerAI component, mage otherwise.
         if (wt == WeaponType.Staff)
-            return hero.GetComponent<HealerAI>() != null ? 1 : 2;  // healer closer, mage further
-        return 0;  // melee — front
+            return hero.GetComponent<HealerAI>() != null ? 1 : 2;
+
+        // Everything else (Sword, LongSword, Dagger, …) → melee front-liner.
+        return 0;
     }
 
-    private static float MaxHealth(Transform hero) =>
-        hero.GetComponent<HealthComponent>()?.maxHealth ?? 0f;
+    private static float MaxHealth(Transform hero)
+    {
+        var hc = hero.GetComponent<HealthComponent>();
+        return hc != null ? hc.maxHealth : 0f;
+    }
 }

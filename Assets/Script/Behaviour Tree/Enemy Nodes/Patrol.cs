@@ -13,6 +13,13 @@ public class Patrol : Node
     private bool isMoving = false;
     private Transform currentPatrolTarget = null;
 
+    // When no patrol node can be found (e.g. spawn in a map-edge room with no floor
+    // nearby), idle for this many seconds before retrying.  Without this, Patrol
+    // returns Failure every BT tick (20 Hz), causing BehaviorTreeRunner to spam the
+    // BT-fallback path and the console every 50 ms.
+    private const float NoNodeRetryDelay = 3f;
+    private float _nextRetryTime = 0f;
+
     public Patrol(Blackboard bb) : base(bb) { }
 
     public override NodeState Evaluate()
@@ -62,11 +69,18 @@ public class Patrol : Node
         }
 
         // Pick a new patrol destination
+        // Guard: if the last attempt failed, wait before retrying so we don't spam
+        // GetRandomPatrolNode (and the console) at 20 Hz when the spawn is in an
+        // unreachable area.
+        if (Time.time < _nextRetryTime)
+            return NodeState.Running;   // idle — will retry when timer elapses
+
         PathNode patrolNode = patrolComp.GetRandomPatrolNode();
         if (patrolNode == null)
         {
-            Debug.LogWarning("Patrol: No walkable node found in patrol area!");
-            return NodeState.Failure;
+            // PatrolComponent already logged a warning.  Back off before retrying.
+            _nextRetryTime = Time.time + NoNodeRetryDelay;
+            return NodeState.Running;   // idle rather than cascading Failure every tick
         }
 
         // Clean up any old patrol target before creating new one

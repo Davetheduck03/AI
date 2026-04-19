@@ -17,6 +17,12 @@ public class NoRevealedEnemies : Node
     private readonly LayerMask  _wallLayers;
     private FogOfWarManager     _fogManager;
 
+    // Throttle the enemy scan — FindGameObjectsWithTag is expensive and this
+    // node runs twice per hero per BT tick (loot guard + world-item guard).
+    private const float ScanInterval = 0.2f;
+    private float       _nextScanTime = float.MinValue;
+    private bool        _cachedClear  = true;   // true = no threat found
+
     public NoRevealedEnemies(Blackboard bb, float range = 10f, LayerMask wallLayers = default) : base(bb)
     {
         _range      = range;
@@ -31,6 +37,13 @@ public class NoRevealedEnemies : Node
         if (bb.Get<bool>("isLooting"))
             return NodeState.Success;
 
+        // Return the cached result between scans to avoid calling
+        // FindGameObjectsWithTag + LOS raycasts every tick.
+        if (Time.time < _nextScanTime)
+            return _cachedClear ? NodeState.Success : NodeState.Failure;
+
+        _nextScanTime = Time.time + ScanInterval;
+
         Transform self = bb.Get<Transform>("self");
         if (self == null) return NodeState.Failure;
 
@@ -41,27 +54,27 @@ public class NoRevealedEnemies : Node
             if (enemyObj == null) continue;
 
             // Skip dead enemies — they may retain the "Enemy" tag during a death
-            // animation before the GameObject is destroyed.  A dead enemy should
-            // never block looting or following.
+            // animation before the GameObject is destroyed.
             var hp = enemyObj.GetComponent<HealthComponent>();
             if (hp != null && hp.currentHealth <= 0) continue;
 
-            // Skip enemies still in fog
+            // Skip enemies still in fog.
             if (_fogManager != null && !_fogManager.IsRevealed(enemyObj.transform.position))
                 continue;
 
             float dist = Vector3.Distance(self.position, enemyObj.transform.position);
             if (dist > _range) continue;
 
-            // Skip enemies behind walls — consistent with FindNearestRevealedEnemy
+            // Skip enemies behind walls.
             if (_wallLayers != 0 &&
                 !VisionUtilities.HasLineOfSight(self.position, enemyObj.transform.position, _wallLayers))
                 continue;
 
-            Debug.Log($"[NoRevealedEnemies] {enemyObj.name} at {dist:F1} blocking non-combat actions");
+            _cachedClear = false;
             return NodeState.Failure;
         }
 
+        _cachedClear = true;
         return NodeState.Success;
     }
 }

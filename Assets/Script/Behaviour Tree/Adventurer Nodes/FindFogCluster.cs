@@ -11,13 +11,20 @@ using UnityEngine;
 ///    party naturally fans out across separate regions of the dungeon instead of all
 ///    converging on the same optimal cluster.
 ///
-/// 2. EXPLORATION MEMORY — the node logs the hero's position every refresh.
-///    Clusters close to recently visited positions are penalised, so heroes
-///    naturally drift toward unexplored territory rather than circling the same rooms.
+/// 2. EXPLORATION MEMORY — the hero permanently remembers every grid tile it has
+///    stepped on.  When scoring cluster candidates, points around each cluster are
+///    sampled and checked against this tile set.  Clusters surrounded by already-
+///    visited tiles are penalised, so heroes naturally prefer genuinely fresh regions.
+///    Unlike the old time-limited log, this memory never expires — tiles stay
+///    remembered for the entire run.
 ///
 /// 3. SCATTER — a small random offset (≤ ScatterRadius units) is applied to the
 ///    final target.  Heroes sharing a cluster don't walk to the exact same tile, and
 ///    paths look organic rather than geometrically identical every run.
+///
+/// 4. TWO-PASS SEARCH — clusters are first searched locally (within LocalSearchRadius).
+///    If none are found the hero enters backtrack mode and the search opens up to the
+///    entire map, sending the hero back toward unexplored territory far away.
 ///
 /// The cluster search is throttled to ClusterRefreshInterval seconds and the target
 /// GO is reused across ticks so MoveTowardsTarget doesn't restart A* every frame.
@@ -27,17 +34,10 @@ public class FindFogCluster : Node
     private readonly FogClusterExplorer _clusterExplorer;
 
     // ── Explore distances ─────────────────────────────────────────────────────
-    // Clusters this close to the hero would be arrived-at almost immediately;
-    // skip them and look for something further away.
     private const float MinExploreDistance = 2.5f;
+    private const float LocalSearchRadius  = 15f;
 
     // ── Refresh throttle ──────────────────────────────────────────────────────
-    // How often to re-run the cluster search. Between refreshes the cached target GO
-    // is reused unchanged so MoveTowardsTarget does not restart A* every frame.
-    // Reduced from 1.5 s: the distance-check bypass (distToTarget < 1.0 f) already
-    // forces an immediate refresh on arrival, so the timer only matters in the
-    // "mid-journey" case.  0.8 s halves the window where the leader can stand idle
-    // at a just-arrived cluster before the next target is picked.
     private const float ClusterRefreshInterval = 0.8f;
     private float _nextRefreshTime = 0f;
 
@@ -46,26 +46,47 @@ public class FindFogCluster : Node
     private bool       _hasValidTarget = false;
 
     // ── Hero variant ──────────────────────────────────────────────────────────
-    // A stable 0-6 index determined once from the hero's instance ID.
-    // Different heroes pick different ranked candidates, spreading the party.
     private int _heroVariant = -1;
 
-    // ── Exploration memory ────────────────────────────────────────────────────
-    // A short circular log of world positions this hero recently visited.
-    // Clusters near these positions are scored down so heroes prefer fresh territory.
-    private struct MemoryEntry { public Vector3 pos; public float time; }
-    private readonly List<MemoryEntry> _recentPositions = new();
+    // ── Tile memory ───────────────────────────────────────────────────────────
+    // Every grid tile this hero has ever stepped on, stored as a quantised integer
+    // coordinate.  The set grows throughout the run and never shrinks — tiles are
+    // remembered permanently so the hero never revisits explored rooms just because
+    // the old time-based log expired.
+    //
+    // TileSize should match the dungeon's grid cell size (world units per tile).
+    // At 1 u/tile, a hero moving at 3 u/s records ~3 new tiles per second.
+    // A 50×50 dungeon produces at most 2 500 entries — negligible memory cost.
+    private readonly HashSet<Vector2Int> _visitedTiles = new();
+    private const float TileSize = 1f;
 
-    private const int   MemoryCapacity    = 7;     // max entries kept
-    private const float MemoryDuration    = 40f;   // seconds before a position is forgotten
-    private const float MemoryRecordGap   = 2.0f;  // min movement before a new entry is added
-    private const float MemoryPenaltyRadius = 4.5f; // penalty radius around each memory entry
-    private const float MemoryPenaltyMax    = 0.5f; // max penalty deducted per nearby memory
+    // Scoring: sample this many points around each cluster candidate.
+    // The centre tile plus one ring of MemorySampleRingCount points at
+    // MemorySampleRadius.  Score penalty = MemoryPenaltyMax × (visited / total).
+    private const int   MemorySampleRingCount = 8;
+    private const float MemorySampleRadius    = 5f;
+    private const float MemoryPenaltyMax      = 0.85f;
+
+    // How often to record the hero's current tile (every BT tick is fine since
+    // HashSet.Add is O(1) and ignores duplicates automatically).
+    // We record on every Evaluate() call — no gap check needed.
+
+    // ── Backtrack state ───────────────────────────────────────────────────────
+    private bool _backtracking = false;
 
     // ── Scatter ───────────────────────────────────────────────────────────────
-    // Random 2-D offset added to the chosen cluster centre.
-    // Keeps heroes from always walking to the exact geometric tile every run.
-    private const float ScatterRadius = 1.3f;
+    private const float ScatterRadius          = 1.3f;
+    private const float ScatterRadiusBacktrack = 0.6f;
+
+    // The cluster center that produced the current _targetGO position.
+    // Scatter is re-rolled only when this changes by more than SameClusterThreshold,
+    // i.e. when the hero genuinely switches to a different cluster.
+    // Without this, every 0.8 s refresh rolls new scatter, moving _targetGO by up
+    // to 2.6 u — above MoveTowardsTarget's TargetMovedThreshold (1.5 u) — which
+    // cancels the in-progress path and starts a new one every interval, producing
+    // constant twitching with no net forward movement.
+    private Vector3 _lastClusterCenter        = new Vector3(float.MaxValue, 0f, 0f);
+    private const float SameClusterThreshold  = 2f;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -87,56 +108,83 @@ public class FindFogCluster : Node
         if (_heroVariant < 0)
             _heroVariant = Mathf.Abs(self.GetInstanceID()) % 7;
 
+        // Record the current tile on every tick — O(1), duplicates are silently ignored.
+        _visitedTiles.Add(WorldToTile(self.position));
+
         if (Time.time < _nextRefreshTime && _targetGO != null && _hasValidTarget)
         {
-            // If the hero has already arrived at the current cached target, force an
-            // immediate refresh so we pick the next cluster without waiting up to
-            // ClusterRefreshInterval (1.5 s) standing idle at the arrived position.
             float distToTarget = Vector3.Distance(self.position, _targetGO.transform.position);
-            if (distToTarget > 1.0f)
+
+            if (distToTarget > 0.6f)
             {
+                // Still travelling — honour the cache so the target stays stable.
+                // Previously this always fell through when distToTarget < 1.0 f,
+                // which re-rolled scatter mid-approach and made MoveTowardsTarget see
+                // a "moved" target every 0.8 s, restarting A* and causing twitching.
                 bb.Set("target", _targetGO.transform);
                 return NodeState.Success;
             }
-            // Close enough — fall through and pick a new cluster now.
+
+            // Hero has arrived at this cluster (within MoveTowardsTarget's 0.5 f
+            // approach range + a small margin).  Expire the cache immediately so
+            // the next Evaluate picks a genuinely new cluster.  Without this, the
+            // same target is returned every tick and MoveTowardsTarget's arrival
+            // check fires repeatedly with distance ≈ 0 — the hero never moves on.
+            _nextRefreshTime   = 0f;
+            _hasValidTarget    = false;
+            _lastClusterCenter = new Vector3(float.MaxValue, 0f, 0f);
         }
 
         // ── Periodic refresh ─────────────────────────────────────────────────
         _nextRefreshTime = Time.time + ClusterRefreshInterval;
 
-        // Log current position and prune stale entries.
-        RecordPosition(self.position);
-        PruneMemory();
-
         float healthPct = 1f;
         var hc = self.GetComponent<HealthComponent>();
         if (hc != null) healthPct = hc.currentHealth / hc.maxHealth;
 
-        // Get multiple ranked cluster centres.
+        // ── Two-pass cluster search ───────────────────────────────────────────
+        // Pass 1: local clusters only (within LocalSearchRadius).
         List<Vector3> candidates = _clusterExplorer.GetRankedTargets(
-            self.position, healthPct, MinExploreDistance, maxResults: 6);
+            self.position, healthPct, MinExploreDistance,
+            maxResults: 6, maxDistance: LocalSearchRadius);
+
+        if (candidates.Count > 0)
+        {
+            if (_backtracking)
+            {
+                _backtracking = false;
+                Debug.Log($"FindFogCluster [{self.name}]: local clusters found, leaving backtrack mode");
+            }
+        }
+        else
+        {
+            // Pass 2: global search — backtrack to any unrevealed region on the map.
+            candidates = _clusterExplorer.GetRankedTargets(
+                self.position, healthPct, MinExploreDistance,
+                maxResults: 6, maxDistance: float.MaxValue);
+
+            if (candidates.Count > 0 && !_backtracking)
+            {
+                _backtracking = true;
+                Debug.Log($"FindFogCluster [{self.name}]: no local clusters, entering backtrack mode");
+            }
+        }
 
         if (candidates.Count == 0)
         {
             _hasValidTarget = false;
+            _backtracking   = false;
             Debug.Log($"FindFogCluster [{self.name}]: no unrevealed tiles remain");
             return NodeState.Failure;
         }
 
         // ── Score & pick ─────────────────────────────────────────────────────
-        // Each candidate starts at score 1.  Nearby memory entries subtract a
-        // fraction of MemoryPenaltyMax proportional to proximity.
+        // Score = 1 - MemoryPenaltyMax × (fraction of sample points already visited).
+        // A cluster entirely surrounded by visited tiles scores close to 0.15;
+        // a cluster in completely fresh territory scores 1.0.
         float[] scores = new float[candidates.Count];
         for (int i = 0; i < candidates.Count; i++)
-        {
-            scores[i] = 1f;
-            foreach (var entry in _recentPositions)
-            {
-                float d = Vector3.Distance(candidates[i], entry.pos);
-                if (d < MemoryPenaltyRadius)
-                    scores[i] -= MemoryPenaltyMax * (1f - d / MemoryPenaltyRadius);
-            }
-        }
+            scores[i] = 1f - MemoryPenaltyMax * VisitedFraction(candidates[i]);
 
         // Build a score-sorted index list (highest first).
         List<int> ranked = new();
@@ -145,25 +193,39 @@ public class FindFogCluster : Node
 
         // Hero variant offsets into the ranked list so different heroes pick
         // different clusters while still preferring well-scored candidates.
-        int pickRank  = _heroVariant % ranked.Count;
-        int pickIdx   = ranked[pickRank];
+        int pickRank   = _heroVariant % ranked.Count;
+        int pickIdx    = ranked[pickRank];
         Vector3 center = candidates[pickIdx];
 
         // ── Scatter ──────────────────────────────────────────────────────────
-        Vector2 scatter2D = Random.insideUnitCircle * ScatterRadius;
-        Vector3 chosen    = center + new Vector3(scatter2D.x, scatter2D.y, 0f);
+        // Only re-scatter when switching to a genuinely different cluster.
+        // If the same center is chosen again on refresh (common in mostly-explored
+        // areas where the same cluster keeps winning), keep the existing _targetGO
+        // position so MoveTowardsTarget never sees a "target moved" event and
+        // never cancels the in-progress path.
+        bool clusterChanged = Vector3.Distance(center, _lastClusterCenter) > SameClusterThreshold;
 
-        // ── Update the persistent GO ─────────────────────────────────────────
         if (_targetGO == null)
             _targetGO = new GameObject("_FogClusterTarget")
                         { hideFlags = HideFlags.HideAndDontSave };
 
-        _targetGO.transform.position = chosen;
+        if (clusterChanged || !_hasValidTarget)
+        {
+            float   scatter   = _backtracking ? ScatterRadiusBacktrack : ScatterRadius;
+            Vector2 scatter2D = Random.insideUnitCircle * scatter;
+            Vector3 chosen    = center + new Vector3(scatter2D.x, scatter2D.y, 0f);
+
+            _targetGO.transform.position = chosen;
+            _lastClusterCenter           = center;
+        }
+        // else: same cluster → keep existing _targetGO.transform.position (no path restart)
+
         _hasValidTarget = true;
 
-        Debug.Log($"FindFogCluster [{self.name}] v{_heroVariant}: " +
+        Debug.Log($"FindFogCluster [{self.name}] v{_heroVariant} " +
+                  $"{(_backtracking ? "[BACKTRACK]" : "[LOCAL]")}: " +
                   $"rank[{pickRank}] → cluster[{pickIdx}] @ {center} " +
-                  $"score={scores[pickIdx]:F2} scatter=({scatter2D.x:F1},{scatter2D.y:F1})");
+                  $"score={scores[pickIdx]:F2} visited={_visitedTiles.Count} tiles");
 
         bb.Set("target", _targetGO.transform);
         return NodeState.Success;
@@ -171,23 +233,35 @@ public class FindFogCluster : Node
 
     // ── Memory helpers ────────────────────────────────────────────────────────
 
-    private void RecordPosition(Vector3 pos)
+    /// <summary>
+    /// Returns what fraction of sample points around <paramref name="center"/>
+    /// the hero has already visited.  0 = completely fresh; 1 = fully explored.
+    /// </summary>
+    private float VisitedFraction(Vector3 center)
     {
-        // Skip if the hero hasn't moved far enough since the last recorded point.
-        if (_recentPositions.Count > 0 &&
-            Vector3.Distance(_recentPositions[^1].pos, pos) < MemoryRecordGap)
-            return;
+        if (_visitedTiles.Count == 0) return 0f;
 
-        _recentPositions.Add(new MemoryEntry { pos = pos, time = Time.time });
+        int total   = 1 + MemorySampleRingCount;
+        int visited = _visitedTiles.Contains(WorldToTile(center)) ? 1 : 0;
 
-        // Trim to capacity — oldest entry goes first.
-        while (_recentPositions.Count > MemoryCapacity)
-            _recentPositions.RemoveAt(0);
+        float angleStep = 360f / MemorySampleRingCount * Mathf.Deg2Rad;
+        for (int i = 0; i < MemorySampleRingCount; i++)
+        {
+            float   a      = i * angleStep;
+            Vector3 sample = center + new Vector3(
+                Mathf.Cos(a) * MemorySampleRadius,
+                Mathf.Sin(a) * MemorySampleRadius, 0f);
+            if (_visitedTiles.Contains(WorldToTile(sample))) visited++;
+        }
+
+        return (float)visited / total;
     }
 
-    private void PruneMemory()
-    {
-        float cutoff = Time.time - MemoryDuration;
-        _recentPositions.RemoveAll(e => e.time < cutoff);
-    }
+    /// <summary>
+    /// Converts a world position to a grid tile coordinate using <see cref="TileSize"/>.
+    /// </summary>
+    private static Vector2Int WorldToTile(Vector3 pos) =>
+        new Vector2Int(
+            Mathf.RoundToInt(pos.x / TileSize),
+            Mathf.RoundToInt(pos.y / TileSize));
 }

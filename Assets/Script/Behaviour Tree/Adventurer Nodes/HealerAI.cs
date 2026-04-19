@@ -72,7 +72,7 @@ public class HealerAI : BehaviorTreeRunner
         // No enemy guard — the healer's job is to stay near the party at all times.
         // Blocking follow when enemies are visible just strands the healer alone.
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new FollowLeader(bb, 0.7f));
+        followSeq.AddChild(new FollowLeader(bb));
         root.AddChild(followSeq);
 
         // ── Priority 4: EXPLORE (fallback if this healer is somehow the leader) ─
@@ -98,8 +98,8 @@ public class HealerAI : BehaviorTreeRunner
         Gizmos.color = new Color(0f, 1f, 0.4f, 0.4f);
         Gizmos.DrawWireSphere(transform.position, healRange);
 
-        // Danger zone (drives enemy guards)
-        Gizmos.color = new Color(1f, 0.3f, 0.3f, 0.2f);
-        Gizmos.DrawWireSphere(transform.position, dangerRange);
+        // Danger zone
+        Gizmos.color = new Color(1f, 0f, 0f, 0.15f);
+        Gizmos.DrawWireSphere(transform.position, healSearchRange * 1.5f);
     }
 }

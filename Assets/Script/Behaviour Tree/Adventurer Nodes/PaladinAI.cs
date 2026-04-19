@@ -102,7 +102,7 @@ public class PaladinAI : BehaviorTreeRunner
 
         // ── Priority 6: FOLLOW LEADER (followers only) ───────────────────────
         var followSeq = new Sequence(bb);
-        followSeq.AddChild(new FollowLeader(bb, 0.7f));
+        followSeq.AddChild(new FollowLeader(bb));
         root.AddChild(followSeq);
 
         // ── Priority 7: EXPLORE (leader + fallback for all) ──────────────────
@@ -121,9 +121,5 @@ public class PaladinAI : BehaviorTreeRunner
         // Enemy detection radius
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, enemyDetectionRange);
-
-        // Heal search radius
-        Gizmos.color = Color.green;
-        Gizmos.DrawWireSphere(transform.position, healSearchRange);
     }
 }
