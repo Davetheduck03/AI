@@ -21,7 +21,7 @@ public class KiteAndAttack : Node
 
 	private const float RetreatTriggerMargin = 0.3f;   // deadzone inside kiteDistance
 	private const float CloseInMargin = 0.5f;   // deadzone outside attackRange
-	private const float StrafeInterval = 1.8f;   // seconds between side-steps
+	private const float StrafeInterval = 1.0f;   // seconds between side-steps (was 1.8 — shorter gap feels less frozen)
 	private const float StrafeDistance = 2.5f;   // world units per side-step
 	private const float StuckDistanceThreshold = 0.25f;
 	private const float MovementCheckInterval = 2.0f;
@@ -31,16 +31,18 @@ public class KiteAndAttack : Node
 	private const float MoveRetriggerInterval = 0.5f;
 
 	// Give up chasing if we haven't closed in after this many seconds.
-	// 14 s gives followers starting from a formation slot enough time to
-	// navigate a corridor to the target before we declare the enemy unreachable.
-	private const float ClosingTimeout     = 14f;
+	// Reduced from 14 s: with the fogged-target bug fixed (SelectCombatTarget now
+	// clears team targets that re-enter fog), the remaining cases are truly
+	// unreachable enemies (behind a sealed wall, etc.).  6 s is enough for a
+	// follower to navigate a full corridor before giving up.
+	private const float ClosingTimeout     = 6f;
 	private float       _closingStartTime  = float.MaxValue;
 
 	// After timing out on an enemy, ignore that specific enemy for this long so
-	// the behaviour tree can fall through to FollowLeader and catch up with the team.
-	// Without this, FindNearestRevealedEnemy re-targets the same enemy the very next
-	// tick and the archer is trapped in an 8-second chase loop forever.
-	private const float GaveUpCooldown = 12f;
+	// the behaviour tree can fall through to FollowLeader / Explore.
+	// Reduced from 12 s to 5 s — matches the shorter ClosingTimeout and lets the
+	// hero retry sooner when the enemy becomes reachable again.
+	private const float GaveUpCooldown = 5f;
 	private Transform   _gaveUpEnemy   = null;
 	private float       _gaveUpTime    = float.MinValue;
 
@@ -128,7 +130,14 @@ public class KiteAndAttack : Node
 			if (_state == CombatState.Closing)
 				_closingStartTime = Time.time;  // start timeout when we enter Closing
 			if (_state == CombatState.Strafing || _state == CombatState.Retreating)
+			{
 				_closingStartTime = float.MaxValue;  // reached the enemy, cancel timer
+				// Cancel the old Closing approach path immediately on transition.
+				// Without this, the hero continues moving toward the enemy on the
+				// coroutine's momentum, overshoots into kiteDistance, and oscillates
+				// Retreating → Strafing → Retreating in rapid succession.
+				StopMovement(self);
+			}
 			if (_state == CombatState.Retreating)
 			{
 				_lastCheckedPos = self.position;
@@ -276,11 +285,15 @@ public class KiteAndAttack : Node
 	{
 		if (Time.time < _nextStrafeTime)
 		{
-			StopMovement(self);
+			// Do NOT call StopMovement here every frame.  The old code spammed
+			// StopPath() 60 times/second between strafes, which killed the strafe
+			// path coroutine on the very frame after it started — causing the hero
+			// to twitch in place without actually moving.  Let the strafe path
+			// complete (or coast) naturally; UnitPathFollower stops on arrival.
 			return;
 		}
 
-		_nextStrafeTime = Time.time + StrafeInterval;
+		_nextStrafeTime  = Time.time + StrafeInterval;
 		_strafeDirection = -_strafeDirection;
 
 		Vector3 toEnemy = (_enemy.position - self.position).normalized;

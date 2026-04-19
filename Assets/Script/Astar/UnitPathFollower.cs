@@ -77,6 +77,10 @@ public class UnitPathFollower : MonoBehaviour
         if (newGoal == null || !newGoal) return;
 
         PathNode currentNode = GridGenerator.Instance.GetNodeAtWorldPosition(transform.position);
+        // Hero may be clipped into a corner wall — snap to nearest walkable node so
+        // A* has a valid start instead of silently aborting and leaving the hero frozen.
+        if (currentNode == null)
+            currentNode = GridGenerator.Instance.GetNearestWalkableNode(transform.position);
         if (currentNode == null) return;
 
         Astar.Instance.FindPath(currentNode, newGoal, (newPath) =>
@@ -112,11 +116,6 @@ public class UnitPathFollower : MonoBehaviour
     private IEnumerator FollowPath(float moveSpeed)
     {
         IsFollowingPath = true;
-
-        // Stagger start slightly based on instance ID so units that spawn
-        // simultaneously don't all request paths on the exact same frame.
-        float stagger = (gameObject.GetInstanceID() & 0xF) * 0.02f;
-        if (stagger > 0f) yield return new WaitForSeconds(stagger);
 
         SubscribeNodeListener();
 
@@ -273,19 +272,29 @@ public class UnitPathFollower : MonoBehaviour
                     }
                 }
 
+                // Pre-avoidance path direction — used for the wall raycast so that a
+                // momentary avoidance steer toward a wall doesn't fire a false repath.
                 Vector2 direction = (lookaheadTarget - currentPos).normalized;
 
                 // ── Ally avoidance steering ───────────────────────────────────
                 // Steers laterally around nearby heroes so they lane-change past
                 // each other instead of colliding and cancelling movement.
                 Vector2 avoidance = ComputeAvoidanceSteering(currentPos, direction);
+                Vector2 moveDirection = direction;
                 if (avoidance.sqrMagnitude > 0.001f)
-                    direction = (direction + avoidance).normalized;
+                    moveDirection = (direction + avoidance).normalized;
 
                 // Structural obstacle raycast (walls / unwalkable nodes).
-                var hit = Physics2D.Raycast(currentPos, direction, 1.5f,
+                // IMPORTANT: use the pre-avoidance `direction`, not `moveDirection`.
+                // The avoidance offset can temporarily point toward a nearby wall when
+                // steering around an ally at a corner; using the avoidance-modified
+                // direction at 1.5 f caused false wall detections that triggered
+                // rapid RecalculatePath calls → hero twitching.
+                // 0.8 f is enough to detect any immediately-adjacent wall tile while
+                // avoiding false positives from walls that are a full tile away.
+                var hit = Physics2D.Raycast(currentPos, direction, 0.8f,
                                             LayerMask.GetMask("Node"));
-                Debug.DrawRay(currentPos, direction * 1.5f, Color.cyan, Time.deltaTime);
+                Debug.DrawRay(currentPos, direction * 0.8f, Color.cyan, Time.deltaTime);
 
                 if (hit.collider != null)
                 {
@@ -301,7 +310,7 @@ public class UnitPathFollower : MonoBehaviour
                 }
 
                 Vector2 pos = transform.position;
-                pos += direction * moveSpeed * Time.deltaTime;
+                pos += moveDirection * moveSpeed * Time.deltaTime;
                 transform.position = pos;
 
                 yield return null;
@@ -410,10 +419,14 @@ public class UnitPathFollower : MonoBehaviour
 
     /// <summary>
     /// Returns true when a straight world-space line between <paramref name="from"/> and
-    /// <paramref name="to"/> passes only over walkable floor tiles (no walls in the way).
-    /// Samples the line every 0.4 units and queries the grid directly, which works
-    /// correctly for dungeons where walls are represented as absent tiles rather than
-    /// solid colliders.
+    /// <paramref name="to"/> passes only over walkable, open floor tiles (no walls or
+    /// wall-adjacent tiles in the way).
+    ///
+    /// Wall-adjacent tiles are rejected even if they are technically walkable.
+    /// This prevents SmoothenPath from "shortcutting" a carefully wall-avoiding A* path
+    /// into a direct line that hugs the wall — which would undo the wall-proximity
+    /// penalty applied during pathfinding.  A tile with 2+ non-walkable neighbours is
+    /// considered wall-adjacent for this check (corners and edge tiles in narrow areas).
     /// </summary>
     private bool HasClearLine(Vector3 from, Vector3 to)
     {
@@ -428,8 +441,25 @@ public class UnitPathFollower : MonoBehaviour
             Vector3  sample = Vector3.Lerp(from, to, (float)i / steps);
             PathNode node   = gridGen.GetNodeAtWorldPosition(sample);
             if (node == null || !node.isWalkable) return false;
+
+            // Reject shortcuts that pass through wall-adjacent tiles (2+ wall
+            // neighbours).  Tiles with fewer than 2 wall neighbours sit in open
+            // space where a straight-line shortcut is genuinely safe to take.
+            if (CountWallNeighbors(node) >= 2) return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// Returns the number of non-walkable (wall) tiles in <paramref name="node"/>'s
+    /// neighbour list — mirrors the same helper in Astar.cs.
+    /// </summary>
+    private static int CountWallNeighbors(PathNode node)
+    {
+        int walls = 0;
+        foreach (var n in node.neighbors)
+            if (n == null || !n.isWalkable) walls++;
+        return walls;
     }
 
     /// <summary>

@@ -115,6 +115,7 @@ public class VFXProjectile : MonoBehaviour
         go.transform.position = origin;
 
         var ps = go.AddComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         var mr = go.GetComponent<ParticleSystemRenderer>();
 
         mr.material         = new Material(Shader.Find("Sprites/Default"));

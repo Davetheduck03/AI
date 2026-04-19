@@ -159,6 +159,7 @@ GameObject:
   - component: {fileID: 3043055404180501218}
   - component: {fileID: 7614737899656170640}
   - component: {fileID: 5190653575497910107}
+  - component: {fileID: 6638107061504665672}
   m_Layer: 8
   m_Name: Hero_01
   m_TagString: Player
@@ -450,6 +451,22 @@ MonoBehaviour:
   flashDuration: 0.2
   damageColour: {r: 1, g: 0.1, b: 0.1, a: 1}
   healColour: {r: 0.1, g: 1, b: 0.3, a: 1}
+--- !u!114 &6638107061504665672
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3413861132331393377}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 69c3fb669b3e2aa4cb24a60f8416b548, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  offset: {x: 0, y: 1.6, z: 0}
+  fontSize: 0.35
+  badgeColor: {r: 1, g: 0.85, b: 0, a: 1}
+  checkInterval: 0.3
 --- !u!1 &7252073885020677130
 GameObject:
   m_ObjectHideFlags: 0

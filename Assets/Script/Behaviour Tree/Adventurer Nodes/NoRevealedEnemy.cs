@@ -40,6 +40,12 @@ public class NoRevealedEnemies : Node
         {
             if (enemyObj == null) continue;
 
+            // Skip dead enemies — they may retain the "Enemy" tag during a death
+            // animation before the GameObject is destroyed.  A dead enemy should
+            // never block looting or following.
+            var hp = enemyObj.GetComponent<HealthComponent>();
+            if (hp != null && hp.currentHealth <= 0) continue;
+
             // Skip enemies still in fog
             if (_fogManager != null && !_fogManager.IsRevealed(enemyObj.transform.position))
                 continue;

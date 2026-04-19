@@ -30,10 +30,24 @@ public class FollowLeader : Node
     private float   _nextMoveCheck        = 0f;
     private const float MoveCheckNear     = 1.0f;  // normal follow: re-check every 1 s
     private const float MoveCheckFar      = 0.4f;  // catch-up mode: re-check every 0.4 s
-    private const float SlotDriftThreshold = 0.5f; // retrigger when slot shifts this far
+    private const float SlotDriftThreshold = 0.35f; // retrigger when slot shifts this far
 
     // Prevent spamming StopAllCoroutines every tick while "in position".
     private bool _arrivedAtSlot = false;
+
+    // Used to detect the frame a path finishes while the hero is still out of
+    // position (path ended early, wall repath, or SeparationBehavior stop).
+    // When that transition is detected we immediately shorten _nextMoveCheck so
+    // recovery re-triggers within 0.25 s instead of waiting up to MoveCheckNear.
+    private bool _wasFollowingPath = false;
+
+    // Preemption detection — mirrors the pattern used by MoveTowardsTarget.
+    // When a higher-priority sequence (combat, loot, item pick-up) was running
+    // last tick, FollowLeader was not evaluated, the path was likely stopped by
+    // that sequence's cleanup, and we must retrigger immediately on the first
+    // tick back rather than waiting up to MoveCheckNear (1 s) for the recovery timer.
+    private const float PreemptionGap = 0.15f;
+    private float _lastEvaluateTime = float.MinValue;
 
     // If snapping the formation slot to the nearest walkable tile moves it more than
     // this distance, the slot is inside a wall. Switch to the corridor fallback instead.
@@ -50,9 +64,9 @@ public class FollowLeader : Node
     // LeashMaxDist — hero is this far from the LEADER → ignore slot, path straight
     //                to the leader at full catch-up speed.  Prevents heroes from
     //                drifting an entire room away during/after combat.
-    private const float CatchUpDist    = 2.5f;
-    private const float CatchUpSpeed   = 1.45f;  // speed multiplier in catch-up mode
-    private const float LeashMaxDist   = 7f;     // hard-leash: path to leader, not slot
+    private const float CatchUpDist    = 1.8f;
+    private const float CatchUpSpeed   = 1.55f;  // speed multiplier in catch-up mode (bumped for tighter group)
+    private const float LeashMaxDist   = 3.5f;   // hard-leash: path to leader, not slot (was 5f — catch stragglers sooner)
 
     // ── Combat formation compression ──────────────────────────────────────────
     // When the leader has an active combat target the normal traversal slot
@@ -87,6 +101,15 @@ public class FollowLeader : Node
         // would have to path straight through the leader to reach the new slot,
         // physically blocking it in narrow corridors. Instead, stop and wait for
         // the leader to walk past, then resume normal following from behind.
+        //
+        // IMPORTANT: only yield when the leader is actively following a path.
+        // After combat ends the leader is briefly stationary while computing the
+        // next fog cluster.  Followers that were in combat-compression position
+        // (behind the leader toward the enemy) can appear "ahead" of the leader in
+        // its new exploration direction before the leader starts moving — gating on
+        // IsFollowingPath prevents those followers from being frozen during that
+        // transition window.
+        //
         // Only apply this when close to the leader — if the follower has fallen
         // far behind, the leader's facing direction (e.g. toward an enemy that is
         // also behind the leader) can incorrectly classify the follower as "ahead"
@@ -94,7 +117,8 @@ public class FollowLeader : Node
         Vector3 leaderFwd      = fm.GetLeaderForward();
         float   forwardOffset  = Vector3.Dot(self.position - leader.position, leaderFwd);
         float   distToLeader   = Vector3.Distance(self.position, leader.position);
-        if (forwardOffset > 0.5f && distToLeader < 3f)
+        bool    leaderMoving   = leader.GetComponent<UnitPathFollower>()?.IsFollowingPath == true;
+        if (leaderMoving && forwardOffset > 0.5f && distToLeader < 3f)
         {
             self.GetComponent<UnitPathFollower>()?.StopPath();
             _arrivedAtSlot = false;   // reset so we re-trigger movement once behind
@@ -121,10 +145,21 @@ public class FollowLeader : Node
             formPos = resolvedNode.transform.position;
         }
 
-        // If no walkable tile could be found for this formation slot (e.g. spawn room
-        // is too small, or the leader's direction hasn't been established yet), fall
-        // through to Explore rather than returning Running and freezing the hero.
-        if (resolvedNode == null) return NodeState.Failure;
+        // If no walkable tile could be found for this formation slot, path directly
+        // to the leader rather than returning Failure.  Returning Failure here drops
+        // the hero into the Explore sequence, which sends them to an independent fog
+        // cluster in a distant room — they then exhaust local fog and stop completely.
+        // A follower should ALWAYS return Running while the leader is alive.
+        if (resolvedNode == null)
+        {
+            if (_targetGO == null)
+                _targetGO = new GameObject("_FollowPos") { hideFlags = HideFlags.HideAndDontSave };
+            _targetGO.transform.position = leader.position;
+            self.GetComponent<MovementComponent>()?.OnTriggerMove(self, _targetGO.transform, CatchUpSpeed);
+            _lastPathedTo  = leader.position;
+            _nextMoveCheck = Time.time + MoveCheckFar;
+            return NodeState.Running;
+        }
 
         // ── Combat formation compression ─────────────────────────────────────
         // When the leader has an active combat target, discard the spread-out
@@ -143,6 +178,12 @@ public class FollowLeader : Node
                 resolvedNode = combatNode;
             }
         }
+
+        // Preemption: was FollowLeader skipped last tick (e.g. combat was running)?
+        // If so the path was likely stopped externally — retrigger immediately on
+        // the first tick back, without waiting for the _nextMoveCheck recovery timer.
+        bool wasPreempted = Time.time - _lastEvaluateTime > PreemptionGap;
+        _lastEvaluateTime = Time.time;
 
         float distToSlot = Vector3.Distance(self.position, formPos);
         // distToLeader was already computed above for the yield-if-ahead check.
@@ -225,9 +266,20 @@ public class FollowLeader : Node
         bool   pathRunning    = pf != null && pf.IsFollowingPath;
         float  slotShift      = Vector3.Distance(formPos, _lastPathedTo);
         bool   slotMovedFar   = slotShift > (pathRunning ? 1.5f : SlotDriftThreshold);
-        bool   recoveryNeeded = !pathRunning && Time.time >= _nextMoveCheck;
+        bool   recoveryNeeded = !pathRunning && distToSlot > _stopRange && Time.time >= _nextMoveCheck;
 
-        if (slotMovedFar || recoveryNeeded)
+        // Detect the exact frame a path finishes while the hero is still out of
+        // position (e.g. path arrived at wrong tile after a wall repath, or
+        // SeparationBehavior called StopPath mid-journey).  On that frame, clamp
+        // _nextMoveCheck to "now + 0.25 s" so recovery fires quickly instead of
+        // waiting up to the full MoveCheckNear (1 s) that was set when the path
+        // was first triggered.
+        bool pathJustFinished = _wasFollowingPath && !pathRunning;
+        _wasFollowingPath = pathRunning;
+        if (pathJustFinished && distToSlot > _stopRange)
+            _nextMoveCheck = Mathf.Min(_nextMoveCheck, Time.time + 0.25f);
+
+        if (slotMovedFar || recoveryNeeded || wasPreempted)
         {
             _nextMoveCheck = Time.time + (catchingUp ? MoveCheckFar : MoveCheckNear);
             _lastPathedTo  = formPos;

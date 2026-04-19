@@ -17,6 +17,7 @@ public static class ParticleFactory
         go.transform.position = position;
 
         var ps  = go.AddComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear); // must stop before setting duration
         var mr  = go.GetComponent<ParticleSystemRenderer>();
 
         // Renderer — bright additive green
@@ -71,6 +72,7 @@ public static class ParticleFactory
         go.transform.position = position;
 
         var ps = go.AddComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         var mr = go.GetComponent<ParticleSystemRenderer>();
 
         mr.material         = CreateAdditiveMaterial(new Color(1f, 0.75f, 0.1f));
@@ -122,6 +124,7 @@ public static class ParticleFactory
             go.transform.position = position;
 
             var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             var mr = go.GetComponent<ParticleSystemRenderer>();
 
             mr.material         = CreateAdditiveMaterial(new Color(0.7f, 0.2f, 1f));
@@ -168,6 +171,7 @@ public static class ParticleFactory
             ring.transform.position = position;
 
             var ps = ring.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             var mr = ring.GetComponent<ParticleSystemRenderer>();
 
             mr.material         = CreateAdditiveMaterial(new Color(0.5f, 0.1f, 1f));
@@ -221,6 +225,7 @@ public static class ParticleFactory
         go.transform.position = position;
 
         var ps = go.AddComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         var mr = go.GetComponent<ParticleSystemRenderer>();
         mr.renderMode = ParticleSystemRenderMode.HorizontalBillboard;
 

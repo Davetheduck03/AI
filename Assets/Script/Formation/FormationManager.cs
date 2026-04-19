@@ -34,18 +34,18 @@ public class FormationManager : MonoBehaviour
     };
     private static readonly Vector2[] Follow2 = {
         new Vector2(  0f,   0f),   // slot 0: leader
-        new Vector2(-1.5f,  0f),   // slot 1: directly behind leader
+        new Vector2(-0.9f,  0f),   // slot 1: directly behind leader
     };
     private static readonly Vector2[] Follow3 = {
         new Vector2(  0f,   0f),   // slot 0: leader
-        new Vector2(-1.2f,  0.4f), // slot 1: behind-right
-        new Vector2(-2.0f, -0.4f), // slot 2: further behind-left
+        new Vector2(-0.9f,  0.3f), // slot 1: behind-right
+        new Vector2(-1.5f, -0.3f), // slot 2: further behind-left
     };
     private static readonly Vector2[] Follow4 = {
         new Vector2(  0f,   0f),   // slot 0: leader
-        new Vector2(-1.2f,  0.4f), // slot 1: behind-right
-        new Vector2(-2.0f, -0.4f), // slot 2: further behind-left
-        new Vector2(-2.8f,  0.4f), // slot 3: furthest behind-right
+        new Vector2(-0.9f,  0.3f), // slot 1: behind-right
+        new Vector2(-1.5f, -0.3f), // slot 2: further behind-left
+        new Vector2(-2.0f,  0.3f), // slot 3: furthest behind-right
     };
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -146,6 +146,11 @@ public class FormationManager : MonoBehaviour
             if (_fogManager != null && !_fogManager.IsRevealed(enemyObj.transform.position))
                 continue;
 
+            // Ignore dead enemies — they should not dictate leader facing direction
+            // while a death animation plays before the GameObject is destroyed.
+            var hp = enemyObj.GetComponent<HealthComponent>();
+            if (hp != null && hp.currentHealth <= 0) continue;
+
             float sq = (enemyObj.transform.position - leader.position).sqrMagnitude;
             if (sq < closestSq)
             {
@@ -205,6 +210,13 @@ public class FormationManager : MonoBehaviour
     /// <summary>True if <paramref name="hero"/> occupies slot 0 (the leader).</summary>
     public bool IsLeader(Transform hero) =>
         _slotMap.TryGetValue(hero, out int slot) && slot == 0;
+
+    /// <summary>
+    /// Returns the formation slot index for <paramref name="hero"/> (0 = leader, highest priority),
+    /// or -1 if the hero is not registered.
+    /// </summary>
+    public int GetSlot(Transform hero) =>
+        _slotMap.TryGetValue(hero, out int slot) ? slot : -1;
 
     /// <summary>The direction the leader is currently considered to be facing.</summary>
     public Vector3 GetLeaderForward() => _leaderForward;

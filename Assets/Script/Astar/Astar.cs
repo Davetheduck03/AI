@@ -33,6 +33,18 @@ public class Astar : MonoBehaviour
         }
     
 
+    // Extra gCost added per adjacent non-walkable (wall) tile neighbour.
+    // This makes nodes near walls more expensive so A* naturally routes
+    // through the centre of corridors.
+    //
+    // 0.35 was too low: a single-wall-neighbour node only cost 0.35 extra,
+    // which is less than the ~1-unit detour to reach the corridor centre, so
+    // short paths still hugged the wall.  1.2 makes a wall-edge node
+    // (1 wall neighbour) cost 1.2 extra — more than the detour cost for any
+    // realistic corridor — without making wall-adjacent tiles impassable in
+    // 1-tile-wide passages where there is no penalty-free alternative.
+    private const float WallProximityPenalty = 1.2f;
+
     private List<PathNode> CalculatePath(PathNode start, PathNode goal)
     {
         var openSet = new List<PathNode>();
@@ -65,9 +77,16 @@ public class Astar : MonoBehaviour
                 if (closedSet.Contains(neighbor) || !neighbor.isWalkable)
                     continue;
 
-                float tentativeG = current.gCost + Vector2.Distance(
+                float moveCost    = Vector2.Distance(
                     (Vector2)current.transform.position,
                     (Vector2)neighbor.transform.position);
+
+                // Penalise tiles adjacent to walls so paths prefer open space.
+                // Count non-walkable entries in the neighbour's own neighbour list;
+                // each one adds WallProximityPenalty to the traversal cost.
+                float wallPenalty = WallAdjacentCount(neighbor) * WallProximityPenalty;
+
+                float tentativeG = current.gCost + moveCost + wallPenalty;
 
                 if (tentativeG < neighbor.gCost)
                 {
@@ -82,6 +101,18 @@ public class Astar : MonoBehaviour
         }
 
         return new List<PathNode>();
+    }
+
+    /// <summary>
+    /// Returns the number of non-walkable (wall) tiles in <paramref name="node"/>'s
+    /// neighbour list.  Higher values mean the node is close to a wall.
+    /// </summary>
+    private static int WallAdjacentCount(PathNode node)
+    {
+        int walls = 0;
+        foreach (var n in node.neighbors)
+            if (n == null || !n.isWalkable) walls++;
+        return walls;
     }
 
     private List<PathNode> ReconstructPath(PathNode endNode)

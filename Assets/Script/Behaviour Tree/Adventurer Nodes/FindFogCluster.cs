@@ -34,7 +34,11 @@ public class FindFogCluster : Node
     // ── Refresh throttle ──────────────────────────────────────────────────────
     // How often to re-run the cluster search. Between refreshes the cached target GO
     // is reused unchanged so MoveTowardsTarget does not restart A* every frame.
-    private const float ClusterRefreshInterval = 1.5f;
+    // Reduced from 1.5 s: the distance-check bypass (distToTarget < 1.0 f) already
+    // forces an immediate refresh on arrival, so the timer only matters in the
+    // "mid-journey" case.  0.8 s halves the window where the leader can stand idle
+    // at a just-arrived cluster before the next target is picked.
+    private const float ClusterRefreshInterval = 0.8f;
     private float _nextRefreshTime = 0f;
 
     // Persistent reusable GO — never destroyed between ticks, just repositioned.
@@ -85,8 +89,16 @@ public class FindFogCluster : Node
 
         if (Time.time < _nextRefreshTime && _targetGO != null && _hasValidTarget)
         {
-            bb.Set("target", _targetGO.transform);
-            return NodeState.Success;
+            // If the hero has already arrived at the current cached target, force an
+            // immediate refresh so we pick the next cluster without waiting up to
+            // ClusterRefreshInterval (1.5 s) standing idle at the arrived position.
+            float distToTarget = Vector3.Distance(self.position, _targetGO.transform.position);
+            if (distToTarget > 1.0f)
+            {
+                bb.Set("target", _targetGO.transform);
+                return NodeState.Success;
+            }
+            // Close enough — fall through and pick a new cluster now.
         }
 
         // ── Periodic refresh ─────────────────────────────────────────────────

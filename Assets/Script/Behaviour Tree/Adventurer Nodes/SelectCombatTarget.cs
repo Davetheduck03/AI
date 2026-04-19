@@ -118,11 +118,25 @@ public class SelectCombatTarget : Node
             if (teamTarget != null && teamTarget.gameObject != null)
             {
                 var hp = teamTarget.GetComponent<HealthComponent>();
-                if (hp == null || hp.currentHealth > 0)
+                bool alive    = hp == null || hp.currentHealth > 0;
+                // CRITICAL: also verify the target is currently revealed.
+                // A follower may have flagged an enemy that has since walked back
+                // into unexplored fog.  Without this check the leader would spend
+                // up to ClosingTimeout (seconds) chasing an invisible target and
+                // never fall through to exploration.
+                bool revealed = _fogManager == null ||
+                                _fogManager.IsRevealed(teamTarget.position);
+
+                if (alive && revealed)
+                {
                     selected = teamTarget;
+                }
                 else
-                    // Team target is dead — clear the stale reference immediately.
+                {
+                    // Stale — dead or back in fog.  Clear immediately so the whole
+                    // team stops trying to engage it.
                     TeamBlackboard.Instance?.Set<Transform>("leaderCombatTarget", null);
+                }
             }
         }
 
@@ -203,6 +217,11 @@ public class SelectCombatTarget : Node
         foreach (GameObject enemyObj in enemies)
         {
             if (enemyObj == null) continue;
+
+            // Skip dead enemies — they may still have the "Enemy" tag during a
+            // death animation before the GameObject is destroyed.
+            var hp = enemyObj.GetComponent<HealthComponent>();
+            if (hp != null && hp.currentHealth <= 0) continue;
 
             if (_fogManager != null &&
                 !_fogManager.IsRevealed(enemyObj.transform.position))

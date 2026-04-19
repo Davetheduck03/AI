@@ -58,8 +58,10 @@ public class MoveAndAttack : Node
             return NodeState.Running;
         }
 
-        // Target drifted away after arrival — re-trigger movement
-        if (arrived && dist > effectiveRange * 1.2f)
+        // Target drifted away after arrival — re-trigger movement.
+        // Use a generous buffer so minor enemy wander / residual separation don't
+        // immediately restart the path and create a visible twitch.
+        if (arrived && dist > effectiveRange * 1.6f)
         {
             arrived = false;
             movementStartTime = Time.time;
@@ -103,8 +105,11 @@ public class MoveAndAttack : Node
         Vector2 targetPos2D = target.position;
         float range = damageComp.AttackRange;
 
-        // Out of attack range — re-trigger movement
-        if (dist > range)
+        // Re-trigger only if hero has drifted well past attack range.
+        // The old threshold was exactly `range` — any push of even 0.001 u beyond it
+        // restarted the path and caused twitching.  Match the generous buffer used
+        // by the drift check above so both code paths stay consistent.
+        if (dist > effectiveRange * 1.6f)
         {
             arrived = false;
             TriggerMovement(self, target);

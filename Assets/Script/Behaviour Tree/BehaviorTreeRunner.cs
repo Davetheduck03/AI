@@ -40,14 +40,16 @@ public class BehaviorTreeRunner : MonoBehaviour
         return null;  // Placeholder
     }
 
-    // How many consecutive Failure ticks must occur before we stop movement.
+    // How many consecutive Failure ticks must occur before the fallback fires.
     // SelectCombatTarget is throttled to 0.2 s, so on the tick right after a target
     // dies the cached result is gone and the BT briefly returns Failure before the
     // next sequence (FollowLeader / Explore) can pick up.  With a 60 fps update loop
-    // that transition window can be 2-4 frames.  Raising the threshold to 8 (≈ 0.13 s)
-    // bridges those blips without letting a genuinely idle hero drift indefinitely.
+    // that transition window is 2-4 frames.  8 frames (≈ 0.13 s) bridges those blips.
     private const int FailureStopThreshold = 8;
     private int _consecutiveFailures = 0;
+
+    // Reusable GO used as the leader-path target when the BT hard-fails for a follower.
+    private GameObject _btFallbackGO = null;
 
     private void Update()
     {
@@ -55,16 +57,42 @@ public class BehaviorTreeRunner : MonoBehaviour
 
         NodeState result = root.Evaluate();
 
-        // If every priority in the tree failed (no enemies, no items, no fog,
-        // no extraction) stop any lingering movement so the hero doesn't drift
-        // toward a stale destination while the BT has nothing to drive it.
+        // If every priority in the tree failed, apply a fallback:
+        //
+        //   FOLLOWERS — path straight to the leader at catch-up speed.
+        //     FollowLeader normally prevents this (it always returns Running for
+        //     a valid follower), but if something goes wrong (leader briefly null,
+        //     FormationManager not ready, etc.) this hard-fallback keeps the hero
+        //     from stopping indefinitely in a distant room.
+        //
+        //   LEADER / solo hero — stop any lingering movement so the hero doesn't
+        //     drift toward a stale destination while the BT has nothing to drive it.
         if (result == NodeState.Failure)
         {
             _consecutiveFailures++;
             if (_consecutiveFailures >= FailureStopThreshold)
             {
-                var pf = GetComponent<UnitPathFollower>();
-                if (pf != null) pf.StopPath();
+                _consecutiveFailures = 0;   // reset so we re-evaluate in FailureStopThreshold frames
+
+                var fm     = FormationManager.Instance;
+                bool isFollower = fm != null && !fm.IsLeader(transform);
+                Transform leader = isFollower ? fm.GetLeader() : null;
+
+                if (leader != null)
+                {
+                    // Follower with a live leader — path to them as hard fallback.
+                    if (_btFallbackGO == null)
+                        _btFallbackGO = new GameObject("_BtFallback")
+                                        { hideFlags = HideFlags.HideAndDontSave };
+                    _btFallbackGO.transform.position = leader.position;
+                    GetComponent<MovementComponent>()?.OnTriggerMove(
+                        transform, _btFallbackGO.transform, 1.45f);
+                }
+                else
+                {
+                    // Leader or no leader found — just stop stale movement.
+                    GetComponent<UnitPathFollower>()?.StopPath();
+                }
             }
         }
         else
