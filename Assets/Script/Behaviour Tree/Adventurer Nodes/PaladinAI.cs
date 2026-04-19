@@ -84,7 +84,10 @@ public class PaladinAI : BehaviorTreeRunner
         root.AddChild(healSeq);
 
         // ── Priority 4: LOOT CHESTS ──────────────────────────────────────────
+        // IsLeaderOrNearLeader gates followers: only loot when within 7 u of
+        // the leader so the paladin doesn't abandon the group for a distant chest.
         var lootSeq = new Sequence(bb);
+        lootSeq.AddChild(new IsLeaderOrNearLeader(bb));
         lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         lootSeq.AddChild(new FindLootInRange(bb, 10f));
         lootSeq.AddChild(new IsTargetRevealed(bb));
@@ -94,6 +97,7 @@ public class PaladinAI : BehaviorTreeRunner
 
         // ── Priority 5: PICK UP WORLD ITEMS ─────────────────────────────────
         var worldItemSeq = new Sequence(bb);
+        worldItemSeq.AddChild(new IsLeaderOrNearLeader(bb));
         worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 16f));
         worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));

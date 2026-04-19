@@ -52,7 +52,11 @@ public class KnightAI : BehaviorTreeRunner
         root.AddChild(attackSeq);
 
         // ── Priority 2: LOOT CHESTS ──────────────────────────────────────────
+        // IsLeaderOrNearLeader prevents followers from sprinting far away to
+        // loot a chest while the leader is heading in a different direction.
+        // Leaders are always allowed through; followers must be within 7 u.
         var lootSeq = new Sequence(bb);
+        lootSeq.AddChild(new IsLeaderOrNearLeader(bb));
         lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         lootSeq.AddChild(new FindLootInRange(bb, 10f));
         lootSeq.AddChild(new IsTargetRevealed(bb));
@@ -62,6 +66,7 @@ public class KnightAI : BehaviorTreeRunner
 
         // ── Priority 3: PICK UP WORLD ITEMS ─────────────────────────────────
         var worldItemSeq = new Sequence(bb);
+        worldItemSeq.AddChild(new IsLeaderOrNearLeader(bb));
         worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 16f));
         worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));
