@@ -235,6 +235,11 @@ public class KiteAndAttack : Node
 
 	// ── Movement helpers ──────────────────────────────────────────────────────
 
+	// Sample step used when probing a dodge direction for wall tiles.
+	// 0.5 u ≈ half a tile: fine enough to catch any wall within the dodge path
+	// without excessive calls per frame.
+	private const float DodgeProbeSampleStep = 0.5f;
+
 	private bool TryRetreat(Transform self)
 	{
 		// Stuck check: if we haven't actually moved since the last interval, force an
@@ -280,9 +285,13 @@ public class KiteAndAttack : Node
 		foreach (var dir in candidates)
 		{
 			Vector3 dest = self.position + dir * stepBack;
-			// GetNodeAtWorldPosition returns null for walls / outside the map, so a
-			// non-null result is a sufficient walkability check.
-			if (GridGenerator.Instance?.GetNodeAtWorldPosition(dest) != null)
+
+			// Full path probe: sample the line from self → dest at DodgeProbeSampleStep
+			// intervals.  An endpoint check alone misses walls that lie between the hero
+			// and a technically-reachable destination (e.g. the hero is 0.3 u from a
+			// wall in the retreat direction and the dest is valid but behind the wall).
+			// Also rejects inner-corner tiles so the hero never dodges into a wedge.
+			if (IsDodgePathClear(self.position, dest))
 			{
 				TriggerMove(self, dest);
 				_nextMoveRetrigger = Time.time + MoveRetriggerInterval;
@@ -307,12 +316,69 @@ public class KiteAndAttack : Node
 			return;
 		}
 
-		_nextStrafeTime  = Time.time + StrafeInterval;
-		_strafeDirection = -_strafeDirection;
-
 		Vector3 toEnemy = (_enemy.position - self.position).normalized;
 		Vector3 perpDir = new Vector3(-toEnemy.y, toEnemy.x, 0f) * _strafeDirection;
-		TriggerMove(self, self.position + perpDir * StrafeDistance);
+		Vector3 dest    = self.position + perpDir * StrafeDistance;
+
+		// Wall-aware strafe: probe the path in the preferred direction first.
+		// If it hits a wall or inner corner, try the opposite side.
+		// If both are blocked (e.g. the unit is in a narrow corridor), skip this
+		// strafe tick entirely — the timer is NOT advanced so we retry next interval.
+		if (IsDodgePathClear(self.position, dest))
+		{
+			_nextStrafeTime  = Time.time + StrafeInterval;
+			_strafeDirection = -_strafeDirection;
+			TriggerMove(self, dest);
+		}
+		else
+		{
+			Vector3 oppDest = self.position - perpDir * StrafeDistance;
+			if (IsDodgePathClear(self.position, oppDest))
+			{
+				_nextStrafeTime  = Time.time + StrafeInterval;
+				// Keep _strafeDirection the same — the wall forced us to the other
+				// side, so next tick the natural direction is correct again.
+				TriggerMove(self, oppDest);
+			}
+			// else: both directions blocked — hold position, retry next StrafeInterval
+		}
+	}
+
+	/// <summary>
+	/// Returns true when the straight-line path from <paramref name="from"/> to
+	/// <paramref name="to"/> passes through only walkable, non-corner tiles.
+	///
+	/// Samples every <see cref="DodgeProbeSampleStep"/> units so thin walls that
+	/// lie between two otherwise-valid endpoints are caught.  The destination itself
+	/// is additionally rejected if it is an inner-corner tile, because heroes pushed
+	/// into those cells tend to get wedged with no clean A* escape.
+	/// </summary>
+	private static bool IsDodgePathClear(Vector3 from, Vector3 to)
+	{
+		var grid = GridGenerator.Instance;
+		if (grid == null) return false;
+
+		Vector3 delta  = to - from;
+		float   dist   = delta.magnitude;
+		if (dist < 0.001f) return true;
+
+		Vector3 step    = delta.normalized * DodgeProbeSampleStep;
+		int     samples = Mathf.CeilToInt(dist / DodgeProbeSampleStep);
+
+		// Sample intermediate tiles (skip index 0 = the hero's own tile).
+		for (int i = 1; i <= samples; i++)
+		{
+			float   t      = Mathf.Min(i * DodgeProbeSampleStep, dist);
+			Vector3 sample = from + delta.normalized * t;
+			var     node   = grid.GetNodeAtWorldPosition(sample);
+
+			if (node == null || !node.isWalkable) return false;
+			// Intermediate inner-corner check: reject any corner tile along the
+			// path — even if it is walkable, the hero may get stuck there.
+			if (node.isInnerCorner) return false;
+		}
+
+		return true;
 	}
 
 	/// <summary>

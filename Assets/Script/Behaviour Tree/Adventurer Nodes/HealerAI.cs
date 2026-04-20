@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Healer AI — Priority: Extract > Heal critical ally > Heal injured ally > Follow leader > Explore.
+/// Healer AI — Priority: Extract > Heal critical ally > Heal injured ally > Loot > Items > Follow leader > Explore.
 ///
 /// The healer never attacks enemies. Its sole contribution in combat is keeping the party
 /// alive. Two healing tiers give finer control:
@@ -9,8 +9,9 @@ using UnityEngine;
 ///   CRITICAL heal (no enemy guard) — fires even mid-combat when an ally is near death.
 ///   This lets the healer push through a fight to save a dying teammate.
 ///
-///   NORMAL heal (enemy guard, soft range) — fires only when no enemies are immediately
-///   nearby, so the healer doesn't wander into danger for a small top-up.
+///   NORMAL heal (no enemy guard) — fires whenever any ally needs a top-up.
+///   Gating on NoRevealedEnemies meant the healer did nothing during a fight until
+///   someone was nearly dead (critical threshold), so the gate was removed.
 ///
 /// When nobody needs healing the healer shadows the leader via FollowLeader so it stays
 /// in range to react quickly when someone gets hurt.
@@ -46,7 +47,7 @@ public class HealerAI : BehaviorTreeRunner
         var root = new Selector(bb);
 
         // ── Priority 0: EXTRACT ──────────────────────────────────────────────
-        var extractSeq = new Sequence(bb);
+        var extractSeq = new LabeledSequence(bb, "0: Extract");
         extractSeq.AddChild(new SetExtractionTarget(bb));
         extractSeq.AddChild(new MoveTowardsTarget(bb, 1.0f));
         extractSeq.AddChild(new TriggerWin(bb));
@@ -54,31 +55,53 @@ public class HealerAI : BehaviorTreeRunner
 
         // ── Priority 1: HEAL CRITICAL ALLY ───────────────────────────────────
         // No NoRevealedEnemies guard — the healer will brave a fight to save a dying ally.
-        var healCritSeq = new Sequence(bb);
+        var healCritSeq = new LabeledSequence(bb, "1: Heal Critical");
         healCritSeq.AddChild(new FindInjuredAlly(bb, criticalHPThreshold, healSearchRange, "healTarget"));
         healCritSeq.AddChild(new HealTarget(bb, healRange, "healTarget"));
         root.AddChild(healCritSeq);
 
         // ── Priority 2: HEAL INJURED ALLY ────────────────────────────────────
-        // No enemy guard — the healer's job is to keep allies alive, including
-        // during combat. Gating this on NoRevealedEnemies meant the healer did
-        // nothing until someone was nearly dead (critical threshold).
-        var healSeq = new Sequence(bb);
+        var healSeq = new LabeledSequence(bb, "2: Heal Normal");
         healSeq.AddChild(new FindInjuredAlly(bb, healThreshold, healSearchRange, "healTarget"));
         healSeq.AddChild(new HealTarget(bb, healRange, "healTarget"));
         root.AddChild(healSeq);
 
-        // ── Priority 3: FOLLOW LEADER ────────────────────────────────────────
+        // ── Priority 3: LOOT CHESTS ──────────────────────────────────────────
+        var lootSeq = new LabeledSequence(bb, "3: Loot");
+        lootSeq.AddChild(new IsLeaderOrNearLeader(bb));
+        lootSeq.AddChild(new NoRevealedEnemies(bb, healSearchRange, wallLayers));
+        lootSeq.AddChild(new FindLootInRange(bb, 10f));
+        lootSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
+        lootSeq.AddChild(new LootTarget(bb));
+        root.AddChild(lootSeq);
+
+        // ── Priority 4: PICK UP WORLD ITEMS ─────────────────────────────────
+        var worldItemSeq = new LabeledSequence(bb, "4: Items");
+        worldItemSeq.AddChild(new IsLeaderOrNearLeader(bb));
+        worldItemSeq.AddChild(new NoRevealedEnemies(bb, healSearchRange, wallLayers));
+        worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 16f));
+        worldItemSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));
+        worldItemSeq.AddChild(new PickupItem(bb));
+        root.AddChild(worldItemSeq);
+
+        // ── Priority 5: YIELD ITEM SPACE ────────────────────────────────────
+        var yieldSeq = new LabeledSequence(bb, "5: Yield Space");
+        yieldSeq.AddChild(new YieldItemSpace(bb));
+        root.AddChild(yieldSeq);
+
+        // ── Priority 6: FOLLOW LEADER ────────────────────────────────────────
         // No enemy guard — the healer's job is to stay near the party at all times.
-        // Blocking follow when enemies are visible just strands the healer alone.
-        var followSeq = new Sequence(bb);
+        var followSeq = new LabeledSequence(bb, "6: Follow");
         followSeq.AddChild(new FollowLeader(bb));
         root.AddChild(followSeq);
 
-        // ── Priority 4: EXPLORE (fallback if this healer is somehow the leader) ─
-        // No NoRevealedEnemies guard — attack/heal are higher priority; if those
-        // fail the healer should explore rather than stand idle mid-dungeon.
-        var exploreSeq = new Sequence(bb);
+        // ── Priority 7: WAIT FOR PARTY UPGRADES (leader only) ───────────────
+        var waitSeq = new LabeledSequence(bb, "7: Wait Upgrades");
+        waitSeq.AddChild(new WaitForPartyUpgrades(bb));
+        root.AddChild(waitSeq);
+
+        // ── Priority 8: EXPLORE (fallback if this healer is somehow the leader) ─
+        var exploreSeq = new LabeledSequence(bb, "8: Explore");
         exploreSeq.AddChild(new FindFogCluster(bb));
         exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);

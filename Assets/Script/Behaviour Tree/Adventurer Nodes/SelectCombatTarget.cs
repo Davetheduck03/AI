@@ -55,6 +55,22 @@ public class SelectCombatTarget : Node
     // "engaged → no target" transition frame instead of every frame.
     private bool _wasEngaged = false;
 
+    // ── Disengage grace period ────────────────────────────────────────────────
+    // When the FOV cone edge wobbles across an enemy (hero curving around a corner,
+    // SeparationBehavior nudging the view direction by a few degrees), the scan
+    // alternates hit/miss at 5 Hz (one flip per ScanInterval).  Without a grace
+    // period, the Selector sees Success → Failure → Success → Failure on the attack
+    // sequence, which means the explore sequence is repeatedly preempted and
+    // re-entered every 0.2 s, causing visible stop/start twitching.
+    //
+    // Fix: when the scan misses but we were recently engaged AND the cached enemy
+    // is still alive, continue returning Success for up to MaxMissesBeforeDisengage
+    // more scan intervals before truly giving up.  The hero stays in combat mode
+    // while SeparationBehavior or path-following briefly rotates the view away from
+    // the boundary enemy, rather than yanking back to exploration every 0.2 s.
+    private int        _consecutiveMisses       = 0;
+    private const int  MaxMissesBeforeDisengage = 2;  // 2 × 0.2s = 0.4s grace window
+
     public SelectCombatTarget(
         Blackboard bb,
         float      selfDefenseRange = 3.0f,
@@ -67,16 +83,56 @@ public class SelectCombatTarget : Node
         _fogManager       = Object.FindAnyObjectByType<FogOfWarManager>();
     }
 
+    // ── Team-engagement override ──────────────────────────────────────────────
+    /// <summary>
+    /// Returns the team's current combat target if it is still alive,
+    /// or null if the team is not engaged.  Used both to override the
+    /// <c>isLooting</c> guard (so followers rally even mid-chest-animation) and
+    /// as the step-2 team-target lookup during the main scan.
+    ///
+    /// Deliberately does NOT check fog-of-war: the broadcast is set by a hero
+    /// that can personally see the enemy, so any follower should trust it
+    /// regardless of whether they have personally explored that tile.
+    /// </summary>
+    private Transform GetLiveTeamTarget()
+    {
+        Transform tt = TeamBlackboard.Instance?.Get<Transform>("leaderCombatTarget");
+        if (tt == null || tt.gameObject == null) return null;
+
+        var hp     = tt.GetComponent<HealthComponent>();
+        bool alive = hp == null || hp.currentHealth > 0;
+
+        // Do NOT require the enemy to be personally revealed by this hero.
+        // The broadcast was written by a hero that CAN see the enemy — trust it.
+        // A fog check here causes distant followers (who haven't yet explored the
+        // combat room) to always see the target as "unrevealed" and never rally,
+        // even though the FogOfWarManager is shared and the tile IS globally revealed.
+        if (alive) return tt;
+
+        // Stale entry — clear it so the whole team stops chasing.
+        TeamBlackboard.Instance?.Set<Transform>("leaderCombatTarget", null);
+        return null;
+    }
+
     public override NodeState Evaluate()
     {
-        // Hero is locked into a loot animation — do not interrupt with combat.
-        if (bb.Get<bool>("isLooting"))
-            return NodeState.Failure;
-
         Transform self = bb.Get<Transform>("self");
         if (self == null) return NodeState.Failure;
 
         bool isLeader = FormationManager.Instance?.IsLeader(self) == true;
+
+        // ── Rally override: check for a live team target BEFORE isLooting ────
+        // When the leader (or any hero) is engaged, all heroes must respond
+        // immediately regardless of what they were doing.  The isLooting guard
+        // below only blocks when the party is NOT fighting.
+        Transform earlyTeamTarget = null;
+        if (!isLeader)
+            earlyTeamTarget = GetLiveTeamTarget();
+
+        // Hero is locked into a loot animation — do not interrupt, UNLESS the
+        // team is actively engaged and needs help right now.
+        if (bb.Get<bool>("isLooting") && earlyTeamTarget == null)
+            return NodeState.Failure;
 
         // ── Return cached result if scan interval hasn't elapsed ─────────────
         // Avoids per-frame FindGameObjectsWithTag + raycasts.
@@ -110,34 +166,16 @@ public class SelectCombatTarget : Node
         selected = FindNearest(self, _selfDefenseRange);
 
         // 2. Team target: rally to whatever any engaged hero is fighting.
+        //    For followers we already fetched and validated this above (earlyTeamTarget)
+        //    so reuse it.  For leaders, do the lookup fresh here.
         if (selected == null)
         {
-            Transform teamTarget =
-                TeamBlackboard.Instance?.Get<Transform>("leaderCombatTarget");
+            Transform teamTarget = isLeader
+                ? GetLiveTeamTarget()           // leader: fresh lookup
+                : earlyTeamTarget;              // follower: already validated above
 
-            if (teamTarget != null && teamTarget.gameObject != null)
-            {
-                var hp = teamTarget.GetComponent<HealthComponent>();
-                bool alive    = hp == null || hp.currentHealth > 0;
-                // CRITICAL: also verify the target is currently revealed.
-                // A follower may have flagged an enemy that has since walked back
-                // into unexplored fog.  Without this check the leader would spend
-                // up to ClosingTimeout (seconds) chasing an invisible target and
-                // never fall through to exploration.
-                bool revealed = _fogManager == null ||
-                                _fogManager.IsRevealed(teamTarget.position);
-
-                if (alive && revealed)
-                {
-                    selected = teamTarget;
-                }
-                else
-                {
-                    // Stale — dead or back in fog.  Clear immediately so the whole
-                    // team stops trying to engage it.
-                    TeamBlackboard.Instance?.Set<Transform>("leaderCombatTarget", null);
-                }
-            }
+            if (teamTarget != null)
+                selected = teamTarget;
         }
 
         // 3. Own scan: nearest revealed enemy within detection range + LOS.
@@ -183,14 +221,36 @@ public class SelectCombatTarget : Node
                 if (lootable != null) lootable.ReleaseClaim(self);
             }
 
-            _cachedTarget = selected;
-            _wasEngaged   = true;
+            _cachedTarget      = selected;
+            _wasEngaged        = true;
+            _consecutiveMisses = 0;   // reset grace counter — target is confirmed visible
             bb.Set("target", selected);
             return NodeState.Success;
         }
 
         // ── No target found ──────────────────────────────────────────────────
-        _cachedTarget = null;
+        // Grace period: if we were just engaged and the cached enemy is still alive,
+        // keep returning Success for up to MaxMissesBeforeDisengage more intervals
+        // before truly disengaging.  This prevents FOV-boundary flicker (enemy at
+        // the edge of the hero's vision cone) from causing rapid combat ↔ explore
+        // oscillation every 0.2 s.
+        if (_wasEngaged && _cachedTarget != null && _cachedTarget.gameObject != null)
+        {
+            var graceHp = _cachedTarget.GetComponent<HealthComponent>();
+            bool stillAlive = graceHp == null || graceHp.currentHealth > 0;
+
+            if (stillAlive && _consecutiveMisses < MaxMissesBeforeDisengage)
+            {
+                _consecutiveMisses++;
+                bb.Set("target", _cachedTarget);
+                return NodeState.Success;   // stay in combat for one more scan
+            }
+        }
+
+        // Truly no target — clear everything and disengage.
+        _cachedTarget      = null;
+        _consecutiveMisses = 0;
+
         if (_wasEngaged)
         {
             _wasEngaged = false;

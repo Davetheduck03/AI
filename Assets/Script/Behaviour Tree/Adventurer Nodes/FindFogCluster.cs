@@ -41,6 +41,23 @@ public class FindFogCluster : Node
     private const float ClusterRefreshInterval = 0.8f;
     private float _nextRefreshTime = 0f;
 
+    // ── Arrival cooldown ──────────────────────────────────────────────────────
+    // When the hero physically reaches an explore target (distToTarget < 0.6 f),
+    // return Failure for ArrivalCooldown seconds instead of immediately picking
+    // the next cluster in the same tick.
+    //
+    // WHY: without this, the node expires its cache and re-picks on the SAME tick.
+    // If the new cluster is also close (common at the fog frontier), MoveTowards-
+    // Target arrives immediately too, so the Explore sequence succeeds and resets
+    // every 1–3 ticks.  The hero does tiny moves between adjacent frontier tiles
+    // at 20 Hz — which looks like "standing still and twitching".
+    //
+    // With the cooldown, the BT falls through to FollowLeader (follower) or the
+    // BT fallback (leader) for 0.4 s, after which FindFogCluster picks a fresh,
+    // properly-distanced cluster and the hero moves purposefully again.
+    private float _arrivalCooldownUntil = 0f;
+    private const float ArrivalCooldown = 0.4f;
+
     // Persistent reusable GO — never destroyed between ticks, just repositioned.
     private GameObject _targetGO      = null;
     private bool       _hasValidTarget = false;
@@ -85,8 +102,14 @@ public class FindFogCluster : Node
     // to 2.6 u — above MoveTowardsTarget's TargetMovedThreshold (1.5 u) — which
     // cancels the in-progress path and starts a new one every interval, producing
     // constant twitching with no net forward movement.
+    //
+    // IMPORTANT: this must be strictly greater than TargetMovedThreshold (1.5 u in
+    // MoveTowardsTarget) so that centroid drift (the snapped center shifts by 1-2 u
+    // as the hero reveals tiles and the cluster frontier recedes) does NOT cross the
+    // "target moved" threshold and restart A*.  Was 1.5 u — equal to the threshold,
+    // leaving zero margin; raised to 3.0 u for a comfortable 1.5 u safety buffer.
     private Vector3 _lastClusterCenter        = new Vector3(float.MaxValue, 0f, 0f);
-    private const float SameClusterThreshold  = 1.5f;
+    private const float SameClusterThreshold  = 3.0f;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -103,6 +126,11 @@ public class FindFogCluster : Node
     {
         Transform self = bb.Get<Transform>("self");
         if (self == null || _clusterExplorer == null) return NodeState.Failure;
+
+        // Arrival cooldown: brief hold-off after reaching a cluster so the BT can
+        // temporarily yield to lower-priority nodes before committing to the next one.
+        if (Time.time < _arrivalCooldownUntil)
+            return NodeState.Failure;
 
         // Assign variant once — stable for this hero's lifetime.
         if (_heroVariant < 0)
@@ -125,14 +153,16 @@ public class FindFogCluster : Node
                 return NodeState.Success;
             }
 
-            // Hero has arrived at this cluster (within MoveTowardsTarget's 0.5 f
-            // approach range + a small margin).  Expire the cache immediately so
-            // the next Evaluate picks a genuinely new cluster.  Without this, the
-            // same target is returned every tick and MoveTowardsTarget's arrival
-            // check fires repeatedly with distance ≈ 0 — the hero never moves on.
-            _nextRefreshTime   = 0f;
-            _hasValidTarget    = false;
-            _lastClusterCenter = new Vector3(float.MaxValue, 0f, 0f);
+            // Hero has arrived at this cluster target.  Start the arrival cooldown:
+            // return Failure for ArrivalCooldown seconds so the BT temporarily yields
+            // to FollowLeader / upgrades / fallback before we pick the next cluster.
+            // This breaks the rapid-cycle pattern where the hero micro-moves between
+            // adjacent frontier tiles at 20 Hz (the "standing still and twitching" bug).
+            _arrivalCooldownUntil = Time.time + ArrivalCooldown;
+            _nextRefreshTime      = 0f;
+            _hasValidTarget       = false;
+            _lastClusterCenter    = new Vector3(float.MaxValue, 0f, 0f);
+            return NodeState.Failure;
         }
 
         // ── Periodic refresh ─────────────────────────────────────────────────

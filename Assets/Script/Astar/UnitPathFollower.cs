@@ -53,6 +53,27 @@ public class UnitPathFollower : MonoBehaviour
         currentIndex = 0;
         movementComp = mc;
 
+        // ── Skip behind-hero start node ───────────────────────────────────────
+        // OnTriggerMove calls WorldToCell(hero.position) to get the A* start node.
+        // WorldToCell snaps to the CENTER of whichever cell the hero is currently
+        // inside, which can be up to 0.5 u BEHIND the hero's direction of travel
+        // (e.g. hero at 1.85 → cell center at 1.5).  SmoothenPath always inserts
+        // that node as path[0], so FollowPath's first move is a backward step.
+        //
+        // Fix: if path[0] is on the opposite side of the hero from path[1] (i.e.
+        // dot(toFirst, toSecond) < 0), the hero has already passed path[0] — skip
+        // straight to path[1].  The dot-product check is direction-aware: if the
+        // goal is genuinely behind the hero, both vectors point the same way and
+        // the check correctly leaves path[0] in place.
+        if (path != null && path.Count >= 2)
+        {
+            Vector2 heroPos  = (Vector2)transform.position;
+            Vector2 toFirst  = (Vector2)path[0].transform.position - heroPos;
+            Vector2 toSecond = (Vector2)path[1].transform.position - heroPos;
+            if (Vector2.Dot(toFirst, toSecond) < 0f)
+                currentIndex = 1;   // path[0] is behind — start from path[1]
+        }
+
         if (gameObject != null && gameObject.activeInHierarchy)
         {
             IsFollowingPath = false;

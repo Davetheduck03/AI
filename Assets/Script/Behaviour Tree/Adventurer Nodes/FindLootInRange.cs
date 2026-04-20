@@ -37,7 +37,16 @@ public class FindLootInRange : Node
                 // Invalidate if the chest fell back into fog since we cached it.
                 bool stillRevealed = fogManager == null || fogManager.IsRevealed(_cachedTarget.position);
 
-                if (loot != null && !loot.isLooted && stillRevealed)
+                // Also invalidate if another living hero has since claimed this chest —
+                // without this check all heroes hold the same cached chest for the full
+                // ScanInterval (0.4 s) after one hero TryClaims it, causing everyone
+                // to path to the same tile and twitch in place.
+                bool isClaimed = loot.claimedBy != null
+                              && loot.claimedBy != self
+                              && loot.claimedBy.gameObject != null
+                              && loot.claimedBy.gameObject.activeInHierarchy;
+
+                if (loot != null && !loot.isLooted && stillRevealed && !isClaimed)
                 {
                     bb.Set("target", _cachedTarget);
                     return NodeState.Success;

@@ -189,6 +189,46 @@ public class GridGenerator : MonoBehaviour
                     node.neighbors.Add(grid[x + 1, y + 1]);
             }
         }
+
+        // ── Mark inner-corner tiles ───────────────────────────────────────────
+        // An inner-corner tile is a walkable tile where two orthogonally-adjacent
+        // cardinal directions are both walls (i.e. the four L-shaped configurations:
+        // N+E, E+S, S+W, W+N).  Heroes pushed into these tiles by separation or
+        // kiting can become physically wedged because escape paths are narrow.
+        //
+        // wallNeighborCount is also cached here so SeparationBehavior and other
+        // systems can read it without scanning the neighbor list every frame.
+        MarkCornerTiles(width, height);
+    }
+
+    private void MarkCornerTiles(int width, int height)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                PathNode node = grid[x, y];
+                if (node == null) continue;
+
+                // A tile is "wall" if it does not exist in the grid (outside map or wall tile).
+                bool wallN = y >= height - 1 || grid[x,     y + 1] == null;
+                bool wallS = y <= 0          || grid[x,     y - 1] == null;
+                bool wallE = x >= width  - 1 || grid[x + 1, y    ] == null;
+                bool wallW = x <= 0          || grid[x - 1, y    ] == null;
+
+                // Count cardinal wall neighbors.
+                int walls = (wallN ? 1 : 0) + (wallS ? 1 : 0)
+                           + (wallE ? 1 : 0) + (wallW ? 1 : 0);
+                node.wallNeighborCount = walls;
+
+                // Inner corner: any two orthogonally-adjacent cardinal walls form an L.
+                // Four possible L orientations: NE, ES, SW, WN.
+                node.isInnerCorner = (wallN && wallE)
+                                   || (wallE && wallS)
+                                   || (wallS && wallW)
+                                   || (wallW && wallN);
+            }
+        }
     }
 
     public PathNode GetNodeAt(int tilemapX, int tilemapY)

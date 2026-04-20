@@ -21,8 +21,31 @@ public class FogClusterExplorer : MonoBehaviour
     // Smaller = more granular targets; heroes aim at precise pockets rather
     // than room-sized blobs whose centre may already be explored.
     [SerializeField] private float clusterRadius  = 5f;
-    [SerializeField] private int   minClusterSize = 6;
+
+    // Minimum number of frontier tiles for a cluster to be considered valid.
+    // With frontier-based exploration the candidate set is much smaller than with
+    // all-unrevealed tiles, so we lower this from 10 to 4.  A frontier cluster
+    // of 4 tiles represents a doorway or narrow corridor worth exploring.
+    // The old reasoning (tiny rooms causing switching) no longer applies because
+    // frontier clusters naturally shrink to zero as the hero enters a room,
+    // rather than persisting as interior unrevealed tiles did.
+    [SerializeField] private int   minClusterSize = 4;
     [SerializeField] private float sampleDistance = 3f;
+
+    // ── Shared cluster cache ──────────────────────────────────────────────────
+    // FogClusterExplorer is a MonoBehaviour singleton shared by all heroes.
+    // FindFogClusters() does an O(n²) proximity scan over all unrevealed tiles —
+    // running it once per hero (×4) per 0.8 s refresh interval causes a CPU spike
+    // that skips movement frames and triggers false stuck-detection repaths.
+    //
+    // Fix: cache the raw cluster list for ClusterCacheLifetime seconds.  All heroes
+    // read the same result between rebuilds; only one rebuild happens per interval
+    // regardless of how many heroes are calling GetRankedTargets simultaneously.
+    // The cache is longer than FindFogCluster's own 0.8 s refresh interval so the
+    // first hero to refresh always hits a live cache and pays zero rebuild cost.
+    private List<FogCluster> _cachedClusters    = null;
+    private float            _cacheExpiry        = 0f;
+    private const float      ClusterCacheLifetime = 2.0f;
 
     [Header("Priority Settings")]
     [SerializeField] private float healthThreshold = 0.5f;
@@ -31,6 +54,19 @@ public class FogClusterExplorer : MonoBehaviour
     {
         if (fogManager == null)
             fogManager = FindAnyObjectByType<FogOfWarManager>();
+    }
+
+    /// <summary>
+    /// Invalidates the shared cluster cache so the next call to
+    /// <see cref="GetRankedTargets"/> triggers a full rebuild.
+    /// Call this whenever the fog state changes (tiles revealed) so heroes
+    /// don't keep heading toward clusters that are already fully explored.
+    /// <see cref="FogOfWarManager"/> should call this after each reveal pass.
+    /// </summary>
+    public void InvalidateClusterCache()
+    {
+        _cachedClusters = null;
+        _cacheExpiry    = 0f;
     }
 
     /// <summary>
@@ -51,10 +87,29 @@ public class FogClusterExplorer : MonoBehaviour
         var result = new List<Vector3>();
         if (fogManager == null) return result;
 
-        List<Vector3> unrevealedTiles = fogManager.GetUnrevealedPositions();
-        if (unrevealedTiles.Count == 0) return result;
+        // ── Frontier-based tile selection ─────────────────────────────────────
+        // Use only frontier tiles (unrevealed walkable tiles adjacent to already-
+        // revealed walkable tiles) rather than ALL unrevealed tiles.
+        //
+        // Benefits vs. clustering all unrevealed tiles:
+        //   • Smaller candidate set: O(perimeter) not O(area) — typically 10–20×
+        //     fewer tiles mid-dungeon, making the O(n²) cluster build proportionally
+        //     cheaper and reducing per-frame CPU spikes.
+        //   • Stable centroids: frontier clusters sit on the edge of explored space
+        //     and shrink slowly as the hero approaches, not as distant tiles are
+        //     revealed elsewhere.  Fewer centroid drift restarts mean fewer A* calls.
+        //   • Natural behaviour: heroes expand the known boundary tile-by-tile
+        //     (like a human explorer following walls to find doorways) rather than
+        //     teleporting toward the middle of rooms they can't enter yet.
+        //
+        // Fall back to all-unrevealed only if the frontier is empty (first frame
+        // before any tiles are revealed, or rare incremental-update lag).
+        List<Vector3> candidateTiles = fogManager.GetFrontierPositions();
+        if (candidateTiles.Count == 0)
+            candidateTiles = fogManager.GetUnrevealedPositions();
+        if (candidateTiles.Count == 0) return result;
 
-        List<FogCluster> clusters = FindFogClusters(unrevealedTiles, fromPosition);
+        List<FogCluster> clusters = FindFogClusters(candidateTiles, fromPosition);
         List<FogCluster> valid    = FilterClustersByHealth(clusters, currentHealthPercent);
 
         if (minDistance > 0f)
@@ -62,7 +117,7 @@ public class FogClusterExplorer : MonoBehaviour
         if (maxDistance < float.MaxValue)
             valid = valid.Where(c => c.distanceFromPlayer <= maxDistance).ToList();
 
-        // Largest clusters first — most unexplored area wins.
+        // Largest clusters first — most unexplored frontier wins.
         valid.Sort((a, b) => b.size.CompareTo(a.size));
 
         foreach (var c in valid)
@@ -71,11 +126,10 @@ public class FogClusterExplorer : MonoBehaviour
             if (result.Count >= maxResults) return result;
         }
 
-        // Pad with individual fog tiles when clusters are sparse.
-        // Only add a tile-fallback if it also satisfies the distance constraints.
+        // Pad with individual frontier tiles when clusters are sparse.
         if (result.Count < maxResults)
         {
-            Vector3? extra = GetNearestFogInRange(unrevealedTiles, fromPosition,
+            Vector3? extra = GetNearestFogInRange(candidateTiles, fromPosition,
                                                   minDistance, maxDistance);
             if (extra.HasValue && !result.Contains(extra.Value))
                 result.Add(extra.Value);
@@ -88,6 +142,21 @@ public class FogClusterExplorer : MonoBehaviour
 
     private List<FogCluster> FindFogClusters(List<Vector3> unrevealedTiles, Vector3 fromPosition)
     {
+        // Return the shared cache when still valid.  All heroes that call this
+        // within ClusterCacheLifetime seconds of the last rebuild share one result,
+        // eliminating the per-hero O(n²) spike that was skipping movement frames.
+        // distanceFromPlayer is re-computed per-caller below in GetRankedTargets so
+        // distance filtering remains hero-specific despite the shared cluster list.
+        if (_cachedClusters != null && Time.time < _cacheExpiry)
+        {
+            // Update distanceFromPlayer for this caller's position so the distance
+            // filter in GetRankedTargets gives correct results with the cached data.
+            foreach (var c in _cachedClusters)
+                c.distanceFromPlayer = Vector3.Distance(fromPosition, c.center);
+            return _cachedClusters;
+        }
+
+        // Cache miss — rebuild from scratch.
         var clusters       = new List<FogCluster>();
         var processedTiles = new HashSet<Vector3>();
         var samplePoints   = SampleFogPoints(unrevealedTiles);
@@ -111,6 +180,8 @@ public class FogClusterExplorer : MonoBehaviour
             });
         }
 
+        _cachedClusters = clusters;
+        _cacheExpiry    = Time.time + ClusterCacheLifetime;
         return clusters;
     }
 

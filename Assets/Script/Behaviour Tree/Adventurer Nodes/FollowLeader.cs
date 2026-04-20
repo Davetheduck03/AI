@@ -57,6 +57,12 @@ public class FollowLeader : Node
     private float      _nextStuckCheck   = 0f;
     private Vector3    _lastStuckPos     = Vector3.zero;
 
+    // Distance to the leader sampled on the previous BT tick.
+    // Used to detect when the leader is actively moving toward this follower so
+    // path retriggering can be suppressed — letting the leader pass rather than
+    // constantly replacing the follower in the leader's path.
+    private float _prevLeaderDist = float.MaxValue;
+
     public FollowLeader(Blackboard bb) : base(bb) { }
 
     /// <summary>
@@ -108,6 +114,36 @@ public class FollowLeader : Node
         // arrive → push → repath oscillation loop.
         if (_arrivedAtLeader && distToLeader <= ResumeRange)
         {
+            _prevLeaderDist   = distToLeader;
+            _lastEvaluateTime = Time.time;
+            return NodeState.Running;
+        }
+
+        // ── Leader approaching: hold position, let the leader pass ───────────
+        // When the leader is actively pathing toward/through this follower, the
+        // naive response (retrigger A* every tick toward the leader) places the
+        // follower right back in the leader's path each BT tick.  The two movement
+        // systems then fight: FollowLeader re-paths the follower into the lane just
+        // as SeparationBehavior tries to yield it out, producing the oscillation
+        // that looks like the follower spinning and the leader getting stuck.
+        //
+        // Fix: when the leader is moving AND the gap is shrinking, stop any current
+        // path and hold position.  SeparationBehavior.yield will shift the follower
+        // perpendicular to the leader's movement — creating a clean gap for the
+        // leader to pass through.  Once the leader has passed (gap stops shrinking),
+        // normal follow-path logic resumes on the very next BT tick.
+        float leaderDeltaDist = distToLeader - _prevLeaderDist;   // negative = approaching
+        _prevLeaderDist       = distToLeader;
+
+        var  leaderPF      = leader.GetComponent<UnitPathFollower>();
+        bool leaderMoving  = leaderPF != null && leaderPF.IsFollowingPath;
+        bool leaderClosing = leaderDeltaDist < -0.01f;            // closing at > 0.01 u/tick
+
+        if (leaderMoving && leaderClosing && distToLeader <= CatchUpDist)
+        {
+            // Stop any active path — don't A* back into the leader's lane.
+            self.GetComponent<UnitPathFollower>()?.StopPath();
+            _arrivedAtLeader  = false;   // not "arrived" — we just stepped aside
             _lastEvaluateTime = Time.time;
             return NodeState.Running;
         }

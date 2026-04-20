@@ -29,6 +29,21 @@ public class FogOfWarManager : MonoBehaviour
     private HashSet<Vector3Int> walkableTilePositions = new HashSet<Vector3Int>();
     private HashSet<Vector3Int> wallTilePositions = new HashSet<Vector3Int>();
 
+    // ── Frontier set ──────────────────────────────────────────────────────────
+    // Frontier = unrevealed walkable tiles adjacent to ≥1 revealed walkable tile.
+    // Maintained incrementally (O(8) per reveal) so GetFrontierPositions() is
+    // O(frontier size) rather than O(all unrevealed tiles × 8 neighbours).
+    // See GetFrontierPositions() for the exploration rationale.
+    private HashSet<Vector3Int> _frontierTiles = new HashSet<Vector3Int>();
+
+    // Shared neighbour lookup — 4 cardinal + 4 diagonal.
+    private static readonly Vector3Int[] Neighbours8 =
+    {
+        Vector3Int.up,    Vector3Int.down,  Vector3Int.left,  Vector3Int.right,
+        new Vector3Int( 1,  1, 0), new Vector3Int( 1, -1, 0),
+        new Vector3Int(-1,  1, 0), new Vector3Int(-1, -1, 0)
+    };
+
     private List<Vector3> recentTargets = new List<Vector3>();
     private const int maxRecentTargets = 5;
     private int consecutiveFailedSearches = 0;
@@ -49,6 +64,7 @@ public class FogOfWarManager : MonoBehaviour
         allTilePositions.Clear();
         walkableTilePositions.Clear();
         wallTilePositions.Clear();
+        _frontierTiles.Clear();
 
         BoundsInt walkableBounds = walkableTilemap.cellBounds;
         foreach (Vector3Int pos in walkableBounds.allPositionsWithin)
@@ -85,10 +101,43 @@ public class FogOfWarManager : MonoBehaviour
         fogTilemap.SetColor(cellPos, fogColor);
     }
 
+    // Cached reference to FogClusterExplorer so RemoveFogTile can invalidate
+    // the shared cluster cache whenever a tile is newly revealed.  Lazy-init on
+    // first use so it works regardless of component initialization order.
+    private FogClusterExplorer _clusterExplorer;
+
     private void RemoveFogTile(Vector3Int cellPos)
     {
+        bool wasAlreadyRevealed = revealedTiles.TryGetValue(cellPos, out bool val) && val;
+
         revealedTiles[cellPos] = true;
         fogTilemap.SetTile(cellPos, null);
+
+        if (!wasAlreadyRevealed)
+        {
+            // ── Incremental frontier update ───────────────────────────────────
+            // Only walkable tiles participate in the frontier.
+            // When a walkable tile is revealed:
+            //   • Remove it from the frontier (it's no longer unrevealed).
+            //   • Its unrevealed walkable neighbours may now border revealed space
+            //     for the first time — add them to the frontier.
+            if (walkableTilePositions.Contains(cellPos))
+            {
+                _frontierTiles.Remove(cellPos);
+
+                foreach (Vector3Int nb in Neighbours8)
+                {
+                    Vector3Int n = cellPos + nb;
+                    if (!walkableTilePositions.Contains(n)) continue;
+                    if (revealedTiles.TryGetValue(n, out bool rev) && rev) continue;
+                    _frontierTiles.Add(n);
+                }
+            }
+
+            if (_clusterExplorer == null)
+                _clusterExplorer = FindAnyObjectByType<FogClusterExplorer>();
+            _clusterExplorer?.InvalidateClusterCache();
+        }
     }
 
     public void RevealFogAroundPosition(Vector3 worldPosition, float radius, LayerMask visionBlockingLayers)
@@ -199,28 +248,42 @@ public class FogOfWarManager : MonoBehaviour
 
     private bool HasAdjacentRevealedWalkable(Vector3Int pos)
     {
-        Vector3Int[] neighbors = new Vector3Int[]
+        foreach (Vector3Int nb in Neighbours8)
         {
-            pos + Vector3Int.up,
-            pos + Vector3Int.down,
-            pos + Vector3Int.left,
-            pos + Vector3Int.right,
-            pos + new Vector3Int(1, 1, 0),
-            pos + new Vector3Int(1, -1, 0),
-            pos + new Vector3Int(-1, 1, 0),
-            pos + new Vector3Int(-1, -1, 0)
-        };
-
-        foreach (Vector3Int neighbor in neighbors)
-        {
-            if (!walkableTilePositions.Contains(neighbor))
-                continue;
-
-            if (revealedTiles.TryGetValue(neighbor, out bool revealed) && revealed)
+            Vector3Int n = pos + nb;
+            if (!walkableTilePositions.Contains(n)) continue;
+            if (revealedTiles.TryGetValue(n, out bool revealed) && revealed)
                 return true;
         }
-
         return false;
+    }
+
+    /// <summary>
+    /// Returns the world positions of all frontier tiles: unrevealed walkable
+    /// tiles that border at least one revealed walkable tile.
+    ///
+    /// WHY FRONTIER TILES ARE BETTER EXPLORATION TARGETS
+    /// ───────────────────────────────────────────────────
+    /// Clustering ALL unrevealed tiles ("interior-out") can direct heroes toward
+    /// the middle of a completely undiscovered room they cannot enter yet, wasting
+    /// movement through fog they can't see through.  Frontier tiles are always on
+    /// the known edge of explored space — walking to one immediately reveals new
+    /// area.  This mirrors how humans explore dungeons: follow the wall until you
+    /// find a new doorway, then go through it.
+    ///
+    /// The set is maintained incrementally in <see cref="RemoveFogTile"/> so this
+    /// call is O(frontier size) rather than O(all unrevealed tiles × 8 neighbours).
+    /// </summary>
+    public List<Vector3> GetFrontierPositions()
+    {
+        var result = new List<Vector3>(_frontierTiles.Count);
+        foreach (Vector3Int cellPos in _frontierTiles)
+        {
+            // Guard: tile might have been revealed since the last frontier update.
+            if (revealedTiles.TryGetValue(cellPos, out bool rev) && rev) continue;
+            result.Add(fogTilemap.GetCellCenterWorld(cellPos));
+        }
+        return result;
     }
 
     public bool IsRevealed(Vector3 worldPosition)

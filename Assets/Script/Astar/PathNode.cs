@@ -26,4 +26,22 @@ public class PathNode : MonoBehaviour
             }
         }
     }
+
+    /// <summary>
+    /// True when this walkable tile sits at the inside of an L-shaped wall junction
+    /// (i.e. two orthogonally-adjacent wall tiles meet at a 90° angle around this tile).
+    /// Set once by GridGenerator.LinkNeighbors after every grid rebuild.
+    ///
+    /// Inner-corner tiles are usable by A* but are dead-ends for physics-driven
+    /// movement: a hero pushed into one by SeparationBehavior can be wedged with
+    /// no room to re-path outward.  Other systems (KiteAndAttack, SeparationBehavior)
+    /// use this flag to avoid nominating these tiles as dodge / push destinations.
+    /// </summary>
+    public bool isInnerCorner;
+
+    /// <summary>
+    /// Number of orthogonal (cardinal) neighbors that are absent or non-walkable.
+    /// Cached by GridGenerator for fast wall-proximity queries.
+    /// </summary>
+    public int wallNeighborCount;
 }
