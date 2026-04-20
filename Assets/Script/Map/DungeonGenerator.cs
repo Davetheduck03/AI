@@ -14,290 +14,289 @@ using UnityEngine.Tilemaps;
 [DefaultExecutionOrder(-100)]
 public class DungeonGenerator : MonoBehaviour
 {
-    public static DungeonGenerator Instance { get; private set; }
+	public static DungeonGenerator Instance { get; private set; }
 
-    /// <summary>Fired after tiles have been painted. GridGenerator and DungeonSpawner listen to this.</summary>
-    public static event Action OnDungeonGenerated;
+	/// <summary>Fired after tiles have been painted. GridGenerator and DungeonSpawner listen to this.</summary>
+	public static event Action OnDungeonGenerated;
 
-    // ─── Inspector ─────────────────────────────────────────────────────────
+	// ─── Inspector ─────────────────────────────────────────────────────────
 
-    [Header("Tilemaps")]
-    [Tooltip("The walkable floor tilemap — also used by GridGenerator for pathfinding nodes.")]
-    [SerializeField] private Tilemap floorTilemap;
-    [Tooltip("The wall tilemap painted around the dungeon perimeter.")]
-    [SerializeField] private Tilemap wallTilemap;
-    [Tooltip("Tile asset painted on the floor tilemap.")]
-    [SerializeField] private TileBase floorTile;
-    [Tooltip("Tile asset painted on the wall tilemap.")]
-    [SerializeField] private TileBase wallTile;
+	[Header("Tilemaps")]
+	[Tooltip("The walkable floor tilemap — also used by GridGenerator for pathfinding nodes.")]
+	[SerializeField] private Tilemap floorTilemap;
+	[Tooltip("The wall tilemap painted around the dungeon perimeter.")]
+	[SerializeField] private Tilemap wallTilemap;
+	[Tooltip("Tile asset painted on the floor tilemap.")]
+	[SerializeField] private TileBase floorTile;
+	[Tooltip("Tile asset painted on the wall tilemap.")]
+	[SerializeField] private TileBase wallTile;
 
-    [Header("Map Size (in tiles)")]
-    [SerializeField] private int mapWidth  = 60;
-    [SerializeField] private int mapHeight = 60;
+	[Header("Map Size (in tiles)")]
+	[SerializeField] private int mapWidth = 60;
+	[SerializeField] private int mapHeight = 60;
 
-    [Header("Room Settings")]
-    // Minimum 8×8 so four heroes always have open floor to spread into before
-    // reaching a corridor.  Rooms smaller than ~6 tiles force heroes into the
-    // corridor immediately, causing SeparationBehavior to fight the path-follower
-    // and producing visible twitching near room entrances.
-    [SerializeField] private int minRoomSize = 8;
-    [SerializeField] private int maxRoomSize = 16;
-    [Tooltip("BSP split depth — more depth means more, smaller rooms.")]
-    [SerializeField] private int bspDepth = 4;
+	[Header("Room Settings")]
+	// Minimum 8×8 so four heroes always have open floor to spread into before
+	// reaching a corridor.  Rooms smaller than ~6 tiles force heroes into the
+	// corridor immediately, causing SeparationBehavior to fight the path-follower
+	// and producing visible twitching near room entrances.
+	[SerializeField] private int minRoomSize = 8;
+	[SerializeField] private int maxRoomSize = 16;
+	[Tooltip("BSP split depth — more depth means more, smaller rooms.")]
+	[SerializeField] private int bspDepth = 4;
 
-    // ─── State ─────────────────────────────────────────────────────────────
+	[Header("Corridor Settings")]
+	[Tooltip("Width of carved corridors in tiles. 1 = single-tile, 3 = three tiles wide, etc.")]
+	[SerializeField][Min(1)] private int corridorWidth = 3;
 
-    private bool[,]          _floorMap;
-    private readonly List<RectInt> _rooms = new List<RectInt>();
+	// ─── State ─────────────────────────────────────────────────────────────
 
-    /// <summary>All carved rooms in tilemap cell coordinates (populated after Generate).</summary>
-    public IReadOnlyList<RectInt> Rooms => _rooms;
+	private bool[,] _floorMap;
+	private readonly List<RectInt> _rooms = new List<RectInt>();
 
-    // ─── Lifecycle ─────────────────────────────────────────────────────────
+	/// <summary>All carved rooms in tilemap cell coordinates (populated after Generate).</summary>
+	public IReadOnlyList<RectInt> Rooms => _rooms;
 
-    private void Awake()
-    {
-        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
-        Instance = this;
-    }
+	// ─── Lifecycle ─────────────────────────────────────────────────────────
 
-    // Generation is triggered by RoundState_PartySelect.Confirm() → Regenerate(),
-    // not at startup — the dungeon only needs to exist during active gameplay.
+	private void Awake()
+	{
+		if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+		Instance = this;
+	}
 
-    // ─── Public API ────────────────────────────────────────────────────────
+	// Generation is triggered by RoundState_PartySelect.Confirm() → Regenerate(),
+	// not at startup — the dungeon only needs to exist during active gameplay.
 
-    /// <summary>Clears the tilemaps and generates a brand-new dungeon.</summary>
-    public void Regenerate()
-    {
-        Generate(); // Generate() now clears tiles itself
-    }
+	// ─── Public API ────────────────────────────────────────────────────────
 
-    /// <summary>World-space centre of the given room index.</summary>
-    public Vector3 GetRoomWorldCenter(int roomIndex)
-    {
-        if (roomIndex < 0 || roomIndex >= _rooms.Count) return Vector3.zero;
-        RectInt r = _rooms[roomIndex];
-        return floorTilemap.GetCellCenterWorld(
-            new Vector3Int(r.x + r.width / 2, r.y + r.height / 2, 0));
-    }
+	/// <summary>Clears the tilemaps and generates a brand-new dungeon.</summary>
+	public void Regenerate()
+	{
+		Generate(); // Generate() now clears tiles itself
+	}
 
-    /// <summary>Random walkable world-space point inside the given room (1-tile inset from edges).</summary>
-    public Vector3 GetRandomPositionInRoom(int roomIndex)
-    {
-        if (roomIndex < 0 || roomIndex >= _rooms.Count) return Vector3.zero;
-        RectInt r = _rooms[roomIndex];
-        int cx = UnityEngine.Random.Range(r.x + 1, r.x + r.width  - 1);
-        int cy = UnityEngine.Random.Range(r.y + 1, r.y + r.height - 1);
-        return floorTilemap.GetCellCenterWorld(new Vector3Int(cx, cy, 0));
-    }
+	/// <summary>World-space centre of the given room index.</summary>
+	public Vector3 GetRoomWorldCenter(int roomIndex)
+	{
+		if (roomIndex < 0 || roomIndex >= _rooms.Count) return Vector3.zero;
+		RectInt r = _rooms[roomIndex];
+		return floorTilemap.GetCellCenterWorld(
+			new Vector3Int(r.x + r.width / 2, r.y + r.height / 2, 0));
+	}
 
-    // ─── Core Generation ───────────────────────────────────────────────────
+	/// <summary>Random walkable world-space point inside the given room (1-tile inset from edges).</summary>
+	public Vector3 GetRandomPositionInRoom(int roomIndex)
+	{
+		if (roomIndex < 0 || roomIndex >= _rooms.Count) return Vector3.zero;
+		RectInt r = _rooms[roomIndex];
+		int cx = UnityEngine.Random.Range(r.x + 1, r.x + r.width - 1);
+		int cy = UnityEngine.Random.Range(r.y + 1, r.y + r.height - 1);
+		return floorTilemap.GetCellCenterWorld(new Vector3Int(cx, cy, 0));
+	}
 
-    private void Generate()
-    {
-        // Always start with a clean slate so leftover tiles never mix with the new layout
-        floorTilemap.ClearAllTiles();
-        if (wallTilemap != null) wallTilemap.ClearAllTiles();
+	// ─── Core Generation ───────────────────────────────────────────────────
 
-        _rooms.Clear();
-        _floorMap = new bool[mapWidth, mapHeight];
+	private void Generate()
+	{
+		// Always start with a clean slate so leftover tiles never mix with the new layout
+		floorTilemap.ClearAllTiles();
+		if (wallTilemap != null) wallTilemap.ClearAllTiles();
 
-        BSPNode root = new BSPNode(new RectInt(0, 0, mapWidth, mapHeight));
-        SplitNode(root, bspDepth);
-        CreateRooms(root);
-        ConnectRooms(root);
-        PaintTiles();
+		_rooms.Clear();
+		_floorMap = new bool[mapWidth, mapHeight];
 
-        OnDungeonGenerated?.Invoke();
-        Debug.Log($"[DungeonGenerator] Generated {_rooms.Count} rooms.");
-    }
+		BSPNode root = new BSPNode(new RectInt(0, 0, mapWidth, mapHeight));
+		SplitNode(root, bspDepth);
+		CreateRooms(root);
+		ConnectRooms(root);
+		PaintTiles();
 
-    // ─── BSP ───────────────────────────────────────────────────────────────
+		OnDungeonGenerated?.Invoke();
+		Debug.Log($"[DungeonGenerator] Generated {_rooms.Count} rooms.");
+	}
 
-    private class BSPNode
-    {
-        public RectInt area;
-        public BSPNode left, right;
-        public RectInt room;
-        public bool    hasRoom;
+	// ─── BSP ───────────────────────────────────────────────────────────────
 
-        public BSPNode(RectInt area) { this.area = area; }
+	private class BSPNode
+	{
+		public RectInt area;
+		public BSPNode left, right;
+		public RectInt room;
+		public bool hasRoom;
 
-        public Vector2Int RoomCenter =>
-            new Vector2Int(room.x + room.width / 2, room.y + room.height / 2);
-    }
+		public BSPNode(RectInt area) { this.area = area; }
 
-    private void SplitNode(BSPNode node, int depth)
-    {
-        if (depth == 0) return;
-        if (TrySplit(node))
-        {
-            SplitNode(node.left,  depth - 1);
-            SplitNode(node.right, depth - 1);
-        }
-    }
+		public Vector2Int RoomCenter =>
+			new Vector2Int(room.x + room.width / 2, room.y + room.height / 2);
+	}
 
-    private bool TrySplit(BSPNode node)
-    {
-        // Prefer splitting along the longer axis; fall back to random
-        int minPartition = minRoomSize + 4;   // room + padding on each side
-        bool splitHorizontal =
-            node.area.height > node.area.width * 1.25f ? true  :
-            node.area.width  > node.area.height * 1.25f ? false :
-            UnityEngine.Random.value > 0.5f;
+	private void SplitNode(BSPNode node, int depth)
+	{
+		if (depth == 0) return;
+		if (TrySplit(node))
+		{
+			SplitNode(node.left, depth - 1);
+			SplitNode(node.right, depth - 1);
+		}
+	}
 
-        if (splitHorizontal)
-        {
-            if (node.area.height < minPartition * 2) return false;
-            int split = UnityEngine.Random.Range(minPartition, node.area.height - minPartition);
-            node.left  = new BSPNode(new RectInt(node.area.x, node.area.y,
-                                                  node.area.width, split));
-            node.right = new BSPNode(new RectInt(node.area.x, node.area.y + split,
-                                                  node.area.width, node.area.height - split));
-        }
-        else
-        {
-            if (node.area.width < minPartition * 2) return false;
-            int split = UnityEngine.Random.Range(minPartition, node.area.width - minPartition);
-            node.left  = new BSPNode(new RectInt(node.area.x, node.area.y,
-                                                  split, node.area.height));
-            node.right = new BSPNode(new RectInt(node.area.x + split, node.area.y,
-                                                  node.area.width - split, node.area.height));
-        }
-        return true;
-    }
+	private bool TrySplit(BSPNode node)
+	{
+		// Prefer splitting along the longer axis; fall back to random
+		int minPartition = minRoomSize + 4;   // room + padding on each side
+		bool splitHorizontal =
+			node.area.height > node.area.width * 1.25f ? true :
+			node.area.width > node.area.height * 1.25f ? false :
+			UnityEngine.Random.value > 0.5f;
 
-    private void CreateRooms(BSPNode node)
-    {
-        // Leaf node — carve a room inside the partition
-        if (node.left == null && node.right == null)
-        {
-            int maxW = Mathf.Min(maxRoomSize, node.area.width  - 2);
-            int maxH = Mathf.Min(maxRoomSize, node.area.height - 2);
+		if (splitHorizontal)
+		{
+			if (node.area.height < minPartition * 2) return false;
+			int split = UnityEngine.Random.Range(minPartition, node.area.height - minPartition);
+			node.left = new BSPNode(new RectInt(node.area.x, node.area.y,
+												  node.area.width, split));
+			node.right = new BSPNode(new RectInt(node.area.x, node.area.y + split,
+												  node.area.width, node.area.height - split));
+		}
+		else
+		{
+			if (node.area.width < minPartition * 2) return false;
+			int split = UnityEngine.Random.Range(minPartition, node.area.width - minPartition);
+			node.left = new BSPNode(new RectInt(node.area.x, node.area.y,
+												  split, node.area.height));
+			node.right = new BSPNode(new RectInt(node.area.x + split, node.area.y,
+												  node.area.width - split, node.area.height));
+		}
+		return true;
+	}
 
-            if (maxW < minRoomSize || maxH < minRoomSize) return;  // partition too small
+	private void CreateRooms(BSPNode node)
+	{
+		// Leaf node — carve a room inside the partition
+		if (node.left == null && node.right == null)
+		{
+			int maxW = Mathf.Min(maxRoomSize, node.area.width - 2);
+			int maxH = Mathf.Min(maxRoomSize, node.area.height - 2);
 
-            int w = UnityEngine.Random.Range(minRoomSize, maxW + 1);
-            int h = UnityEngine.Random.Range(minRoomSize, maxH + 1);
-            int x = node.area.x + UnityEngine.Random.Range(1, node.area.width  - w);
-            int y = node.area.y + UnityEngine.Random.Range(1, node.area.height - h);
+			if (maxW < minRoomSize || maxH < minRoomSize) return;  // partition too small
 
-            node.room    = new RectInt(x, y, w, h);
-            node.hasRoom = true;
+			int w = UnityEngine.Random.Range(minRoomSize, maxW + 1);
+			int h = UnityEngine.Random.Range(minRoomSize, maxH + 1);
+			int x = node.area.x + UnityEngine.Random.Range(1, node.area.width - w);
+			int y = node.area.y + UnityEngine.Random.Range(1, node.area.height - h);
 
-            for (int fx = x; fx < x + w; fx++)
-                for (int fy = y; fy < y + h; fy++)
-                    SetFloor(fx, fy);
+			node.room = new RectInt(x, y, w, h);
+			node.hasRoom = true;
 
-            _rooms.Add(node.room);
-            return;
-        }
+			for (int fx = x; fx < x + w; fx++)
+				for (int fy = y; fy < y + h; fy++)
+					SetFloor(fx, fy);
 
-        if (node.left  != null) CreateRooms(node.left);
-        if (node.right != null) CreateRooms(node.right);
-    }
+			_rooms.Add(node.room);
+			return;
+		}
 
-    private void ConnectRooms(BSPNode node)
-    {
-        if (node.left == null || node.right == null) return;
+		if (node.left != null) CreateRooms(node.left);
+		if (node.right != null) CreateRooms(node.right);
+	}
 
-        ConnectRooms(node.left);
-        ConnectRooms(node.right);
+	private void ConnectRooms(BSPNode node)
+	{
+		if (node.left == null || node.right == null) return;
 
-        Vector2Int a = GetLeafCenter(node.left);
-        Vector2Int b = GetLeafCenter(node.right);
-        CarveCorridorLShaped(a, b);
-    }
+		ConnectRooms(node.left);
+		ConnectRooms(node.right);
 
-    // Walk down to a leaf node that has a room and return its centre
-    private Vector2Int GetLeafCenter(BSPNode node)
-    {
-        if (node.hasRoom) return node.RoomCenter;
-        if (node.left  != null) { var c = GetLeafCenter(node.left);  if (c != Vector2Int.zero) return c; }
-        if (node.right != null) { var c = GetLeafCenter(node.right); if (c != Vector2Int.zero) return c; }
-        return Vector2Int.zero;
-    }
+		Vector2Int a = GetLeafCenter(node.left);
+		Vector2Int b = GetLeafCenter(node.right);
+		CarveCorridorLShaped(a, b);
+	}
 
-    private void CarveCorridorLShaped(Vector2Int a, Vector2Int b)
-    {
-        // Randomly choose whether to go horizontal-first or vertical-first
-        Vector2Int elbow = UnityEngine.Random.value > 0.5f
-            ? new Vector2Int(b.x, a.y)
-            : new Vector2Int(a.x, b.y);
+	// Walk down to a leaf node that has a room and return its centre
+	private Vector2Int GetLeafCenter(BSPNode node)
+	{
+		if (node.hasRoom) return node.RoomCenter;
+		if (node.left != null) { var c = GetLeafCenter(node.left); if (c != Vector2Int.zero) return c; }
+		if (node.right != null) { var c = GetLeafCenter(node.right); if (c != Vector2Int.zero) return c; }
+		return Vector2Int.zero;
+	}
 
-        CarveLine(a, elbow);
-        CarveLine(elbow, b);
-    }
+	private void CarveCorridorLShaped(Vector2Int a, Vector2Int b)
+	{
+		// Randomly choose whether to go horizontal-first or vertical-first
+		Vector2Int elbow = UnityEngine.Random.value > 0.5f
+			? new Vector2Int(b.x, a.y)
+			: new Vector2Int(a.x, b.y);
 
-    private void CarveLine(Vector2Int from, Vector2Int to)
-    {
-        int x = from.x, y = from.y;
+		CarveLine(a, elbow);
+		CarveLine(elbow, b);
+	}
 
-        // Horizontal segment — 5 tiles wide, centred on y  (y-2 .. y+2).
-        while (x != to.x)
-        {
-            SetFloor(x, y - 2);
-            SetFloor(x, y - 1);
-            SetFloor(x, y);
-            SetFloor(x, y + 1);
-            SetFloor(x, y + 2);
-            x += (x < to.x) ? 1 : -1;
-        }
+	private void CarveLine(Vector2Int from, Vector2Int to)
+	{
+		int half = corridorWidth / 2;
+		int x = from.x, y = from.y;
 
-        // Vertical segment — 5 tiles wide, centred on x  (x-2 .. x+2).
-        while (y != to.y)
-        {
-            SetFloor(x - 2, y);
-            SetFloor(x - 1, y);
-            SetFloor(x,     y);
-            SetFloor(x + 1, y);
-            SetFloor(x + 2, y);
-            y += (y < to.y) ? 1 : -1;
-        }
+		// Horizontal segment — corridorWidth tiles tall, centred on y.
+		while (x != to.x)
+		{
+			for (int dy = -half; dy <= half; dy++)
+				SetFloor(x, y + dy);
+			x += (x < to.x) ? 1 : -1;
+		}
 
-        // End point + 5-wide cross so the elbow junction is fully open.
-        for (int dx = -2; dx <= 2; dx++) SetFloor(to.x + dx, to.y);
-        for (int dy = -2; dy <= 2; dy++) SetFloor(to.x, to.y + dy);
-    }
+		// Vertical segment — corridorWidth tiles wide, centred on x.
+		while (y != to.y)
+		{
+			for (int dx = -half; dx <= half; dx++)
+				SetFloor(x + dx, y);
+			y += (y < to.y) ? 1 : -1;
+		}
 
-    private void SetFloor(int x, int y)
-    {
-        if (x < 0 || y < 0 || x >= mapWidth || y >= mapHeight) return;
-        _floorMap[x, y] = true;
-    }
+		// Fill the elbow so the junction is fully open.
+		for (int dx = -half; dx <= half; dx++) SetFloor(to.x + dx, to.y);
+		for (int dy = -half; dy <= half; dy++) SetFloor(to.x, to.y + dy);
+	}
 
-    // ─── Tile Painting ─────────────────────────────────────────────────────
+	private void SetFloor(int x, int y)
+	{
+		if (x < 0 || y < 0 || x >= mapWidth || y >= mapHeight) return;
+		_floorMap[x, y] = true;
+	}
 
-    private void PaintTiles()
-    {
-        for (int x = 0; x < mapWidth; x++)
-        {
-            for (int y = 0; y < mapHeight; y++)
-            {
-                var cell = new Vector3Int(x, y, 0);
+	// ─── Tile Painting ─────────────────────────────────────────────────────
 
-                if (_floorMap[x, y])
-                {
-                    floorTilemap.SetTile(cell, floorTile);
-                }
-                else if (wallTilemap != null && wallTile != null && IsAdjacentToFloor(x, y))
-                {
-                    wallTilemap.SetTile(cell, wallTile);
-                }
-            }
-        }
-    }
+	private void PaintTiles()
+	{
+		for (int x = 0; x < mapWidth; x++)
+		{
+			for (int y = 0; y < mapHeight; y++)
+			{
+				var cell = new Vector3Int(x, y, 0);
 
-    private bool IsAdjacentToFloor(int x, int y)
-    {
-        for (int dx = -1; dx <= 1; dx++)
-            for (int dy = -1; dy <= 1; dy++)
-            {
-                if (dx == 0 && dy == 0) continue;
-                int nx = x + dx, ny = y + dy;
-                if (nx >= 0 && ny >= 0 && nx < mapWidth && ny < mapHeight && _floorMap[nx, ny])
-                    return true;
-            }
-        return false;
-    }
+				if (_floorMap[x, y])
+				{
+					floorTilemap.SetTile(cell, floorTile);
+				}
+				else if (wallTilemap != null && wallTile != null && IsAdjacentToFloor(x, y))
+				{
+					wallTilemap.SetTile(cell, wallTile);
+				}
+			}
+		}
+	}
+
+	private bool IsAdjacentToFloor(int x, int y)
+	{
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++)
+			{
+				if (dx == 0 && dy == 0) continue;
+				int nx = x + dx, ny = y + dy;
+				if (nx >= 0 && ny >= 0 && nx < mapWidth && ny < mapHeight && _floorMap[nx, ny])
+					return true;
+			}
+		return false;
+	}
 }

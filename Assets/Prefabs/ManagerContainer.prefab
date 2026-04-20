@@ -10,6 +10,8 @@ GameObject:
   m_Component:
   - component: {fileID: 193915965663514842}
   - component: {fileID: 2566916143701226328}
+  - component: {fileID: 1509352656554972781}
+  - component: {fileID: 2521571418491769708}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -42,6 +44,30 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e860150b29f2e3846b15b646c4992f37, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &1509352656554972781
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1217463778351659170}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b46e2e77f6de75c47b410257831a4dc0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &2521571418491769708
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1217463778351659170}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 919914a536dd2f04c91e4a1ff75a3d1e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!1 &3673175456601149422
@@ -179,9 +205,9 @@ MonoBehaviour:
   worldItemPrefab: {fileID: 3079422274475899644, guid: 4c61aa658c31018459be686ffd0745a2, type: 3}
   defaultLootTable: {fileID: 11400000, guid: 24302976173991d4aac556d1984e4a3c, type: 2}
   relicItem: {fileID: 11400000, guid: 2ed1902283af1b4489092de4395628b3, type: 2}
-  chestsPerMap: 12
-  minEnemiesPerRoom: 1
-  maxEnemiesPerRoom: 2
+  chestsPerMap: 16
+  minEnemiesPerRoom: 4
+  maxEnemiesPerRoom: 5
 --- !u!1 &5525159536406985445
 GameObject:
   m_ObjectHideFlags: 0
@@ -232,9 +258,10 @@ MonoBehaviour:
   wallTile: {fileID: 11400000, guid: 7c940a3b865e2d544913ed30ea1572ff, type: 2}
   mapWidth: 60
   mapHeight: 60
-  minRoomSize: 6
-  maxRoomSize: 10
-  bspDepth: 4
+  minRoomSize: 12
+  maxRoomSize: 15
+  bspDepth: 3
+  corridorWidth: 8
 --- !u!1 &8385566539735300679
 GameObject:
   m_ObjectHideFlags: 0
@@ -337,6 +364,12 @@ MonoBehaviour:
     prefab: {fileID: 3413861132331393377, guid: e47a2f21af642eb4f8fc02dd451afc70, type: 3}
   - classSO: {fileID: 11400000, guid: 3adf7eba5c2ef2e46bd0f1ce7f0db79d, type: 2}
     prefab: {fileID: 3413861132331393377, guid: 2dbed49558b38aa41ba72b9b31e9be04, type: 3}
+  - classSO: {fileID: 11400000, guid: c82dafe48cbc03b4082d16d905272cac, type: 2}
+    prefab: {fileID: 3413861132331393377, guid: 12e9155e59c565a499e77731ab63045a, type: 3}
+  - classSO: {fileID: 11400000, guid: 45b4abbc04d2c984c9e37ae4a4cde425, type: 2}
+    prefab: {fileID: 3413861132331393377, guid: c03c56b832091e945aab66ca241d1a70, type: 3}
+  - classSO: {fileID: 11400000, guid: 535c0aea8337db64eab493b189de6809, type: 2}
+    prefab: {fileID: 3413861132331393377, guid: 531a183fdbf60e940980884067a85abb, type: 3}
 --- !u!114 &2206654839439043820
 MonoBehaviour:
   m_ObjectHideFlags: 0

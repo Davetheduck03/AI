@@ -3569,23 +3569,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 690289731}
   m_CullTransparentMesh: 1
---- !u!1 &745790528 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 4531527605268387192, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
-  m_PrefabInstance: {fileID: 1305687712}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &745790531
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 745790528}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 919914a536dd2f04c91e4a1ff75a3d1e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &758523574
 GameObject:
   m_ObjectHideFlags: 0
@@ -4518,6 +4501,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b46e2e77f6de75c47b410257831a4dc0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &982732331
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 982732325}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 919914a536dd2f04c91e4a1ff75a3d1e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!1 &1006606397
@@ -5916,12 +5911,16 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 742593927737155802, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
+      propertyPath: chestsPerMap
+      value: 16
+      objectReference: {fileID: 0}
+    - target: {fileID: 742593927737155802, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       propertyPath: maxEnemiesPerRoom
-      value: 3
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 742593927737155802, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       propertyPath: minEnemiesPerRoom
-      value: 2
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 895993483253627849, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       propertyPath: availableClasses.Array.size
@@ -5960,6 +5959,18 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 452870009}
     - target: {fileID: 5039918461335439402, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
+      propertyPath: bspDepth
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 5039918461335439402, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
+      propertyPath: maxRoomSize
+      value: 15
+      objectReference: {fileID: 0}
+    - target: {fileID: 5039918461335439402, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
+      propertyPath: minRoomSize
+      value: 12
+      objectReference: {fileID: 0}
+    - target: {fileID: 5039918461335439402, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       propertyPath: wallTilemap
       value: 
       objectReference: {fileID: 9902583}
@@ -5967,6 +5978,14 @@ PrefabInstance:
       propertyPath: floorTilemap
       value: 
       objectReference: {fileID: 452870009}
+    - target: {fileID: 5039918461335439402, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
+      propertyPath: cornerChamfer
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 5039918461335439402, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
+      propertyPath: corridorWidth
+      value: 8
+      objectReference: {fileID: 0}
     - target: {fileID: 5195088614816932372, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       propertyPath: fogTilemap
       value: 
@@ -6026,9 +6045,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1217463778351659170, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       insertIndex: -1
       addedObject: {fileID: 982732328}
-    - targetCorrespondingSourceObject: {fileID: 4531527605268387192, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
+    - targetCorrespondingSourceObject: {fileID: 1217463778351659170, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 745790531}
+      addedObject: {fileID: 982732331}
   m_SourcePrefab: {fileID: 100100000, guid: f8cc3e44718f83b4abecacec8db21c39, type: 3}
 --- !u!1 &1368567172
 GameObject:
