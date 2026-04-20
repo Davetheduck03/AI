@@ -14,173 +14,178 @@ using UnityEngine;
 ///   Heroes that are themselves moving rely on UnitPathFollower's avoidance
 ///   steering, so yielding is skipped while IsFollowingPath is true.
 ///   Yielding is also suppressed during combat so attack positions stay stable.
+///
+/// CORNER-WEDGE FIX: both separation and yield now test the candidate landing
+/// position against wall-adjacent tiles (CountWallNeighbors >= 3) in addition to
+/// the walkability check. This prevents heroes from being nudged into tight
+/// inner-corner cells where A* cannot path them back out cleanly, which was the
+/// primary cause of the "stuck in a corner" bug.
 /// </summary>
 public class SeparationBehavior : MonoBehaviour
 {
-    // ── Separation ────────────────────────────────────────────────────────────
+	// ── Separation ────────────────────────────────────────────────────────────
 
-    [Tooltip("Distance (world units) at which separation starts.")]
-    [SerializeField] private float separationRadius = 1.0f;
+	[Tooltip("Distance (world units) at which separation starts.")]
+	[SerializeField] private float separationRadius = 1.0f;
 
-    [Tooltip("Maximum push speed when the hero is fully stopped.")]
-    [SerializeField] private float separationSpeed = 5.0f;
+	[Tooltip("Maximum push speed when the hero is fully stopped.")]
+	[SerializeField] private float separationSpeed = 5.0f;
 
-    // Strength multiplier applied while a path is actively running.
-    // Keep small — avoidance steering handles the dynamic case.
-    private const float MovingStrengthScale = 0.15f;
+	private const float MovingStrengthScale = 0.15f;
 
-    // ── Yielding ──────────────────────────────────────────────────────────────
+	// ── Yielding ──────────────────────────────────────────────────────────────
 
-    [Tooltip("Radius within which this hero detects an approaching higher-priority mover and steps aside.")]
-    [SerializeField] private float yieldRadius = 1.5f;
+	[Tooltip("Radius within which this hero detects an approaching higher-priority mover and steps aside.")]
+	[SerializeField] private float yieldRadius = 1.5f;
 
-    [Tooltip("Speed at which this hero sidesteps when yielding to a higher-priority hero.")]
-    [SerializeField] private float yieldSpeed = 3.5f;
+	[Tooltip("Speed at which this hero sidesteps when yielding to a higher-priority hero.")]
+	[SerializeField] private float yieldSpeed = 3.5f;
 
-    // ── Internal refs ─────────────────────────────────────────────────────────
+	// ── Wall-adjacent rejection ───────────────────────────────────────────────
+	// A PathNode with this many or more non-walkable neighbours is considered
+	// wall-adjacent and should not be used as a push/yield destination.
+	// 3+ wall neighbours = inner corner tile = dead-end for A*.
+	private const int WallAdjacentThreshold = 3;
 
-    private int              _heroLayerMask;
-    private UnitPathFollower _pathFollower;
+	// ── Internal refs ─────────────────────────────────────────────────────────
 
-    private void Awake()
-    {
-        _heroLayerMask = 1 << LayerMask.NameToLayer("Player");
-        _pathFollower  = GetComponent<UnitPathFollower>();
-    }
+	private int _heroLayerMask;
+	private UnitPathFollower _pathFollower;
 
-    private void Update()
-    {
-        bool inCombat = TeamBlackboard.Instance?.Get<Transform>("leaderCombatTarget") != null;
-        bool moving   = _pathFollower != null && _pathFollower.IsFollowingPath;
+	private void Awake()
+	{
+		_heroLayerMask = 1 << LayerMask.NameToLayer("Player");
+		_pathFollower = GetComponent<UnitPathFollower>();
+	}
 
-        // ── Separation ────────────────────────────────────────────────────────
-        {
-            Collider2D[] nearby = Physics2D.OverlapCircleAll(
-                transform.position, separationRadius, _heroLayerMask);
+	private void Update()
+	{
+		bool inCombat = TeamBlackboard.Instance?.Get<Transform>("leaderCombatTarget") != null;
+		bool moving = _pathFollower != null && _pathFollower.IsFollowingPath;
 
-            Vector2 push = Vector2.zero;
+		// ── Separation ────────────────────────────────────────────────────────
+		{
+			Collider2D[] nearby = Physics2D.OverlapCircleAll(
+				transform.position, separationRadius, _heroLayerMask);
 
-            foreach (Collider2D col in nearby)
-            {
-                if (col == null || col.gameObject == gameObject) continue;
+			Vector2 push = Vector2.zero;
 
-                Vector2 away = (Vector2)(transform.position - col.transform.position);
-                float   dist = away.magnitude;
+			foreach (Collider2D col in nearby)
+			{
+				if (col == null || col.gameObject == gameObject) continue;
 
-                if (dist < 0.001f)
-                {
-                    float angle = (gameObject.GetInstanceID() & 0xFF) * (Mathf.PI * 2f / 256f);
-                    away = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
-                    dist = 0.001f;
-                }
+				Vector2 away = (Vector2)(transform.position - col.transform.position);
+				float dist = away.magnitude;
 
-                float strength = 1f - Mathf.Clamp01(dist / separationRadius);
-                push += away.normalized * strength;
-            }
+				if (dist < 0.001f)
+				{
+					float angle = (gameObject.GetInstanceID() & 0xFF) * (Mathf.PI * 2f / 256f);
+					away = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+					dist = 0.001f;
+				}
 
-            if (push.sqrMagnitude > 0.001f)
-            {
-                // Disable during combat — heroes must hold their attack positions.
-                // During movement, scale way down so separation doesn't oppose the path.
-                float scale = moving ? MovingStrengthScale : (inCombat ? 0f : 1f);
-                if (scale > 0f)
-                {
-                    Vector3 delta  = (Vector3)(push.normalized * separationSpeed * scale * Time.deltaTime);
-                    Vector3 newPos = transform.position + delta;
-                    // Don't push heroes into walls — only apply the separation if the
-                    // target position lies on a walkable tile. This prevents heroes from
-                    // being nudged slightly into wall tiles in narrow corridors, which
-                    // causes A* to spend every call snapping the start position back out.
-                    var landingNode = GridGenerator.Instance?.GetNodeAtWorldPosition(newPos);
-                    if (landingNode != null && landingNode.isWalkable)
-                        transform.position = newPos;
-                }
-            }
-        }
+				float strength = 1f - Mathf.Clamp01(dist / separationRadius);
+				push += away.normalized * strength;
+			}
 
-        // ── Yield to higher-priority movers ───────────────────────────────────
-        // A stopped hero detects any actively moving hero with a higher slot
-        // priority and sidesteps perpendicular to clear the lane for them.
-        // Skipped during combat (hold attack position) and while this hero is
-        // already moving (avoidance steering handles the in-motion case).
-        if (!inCombat && !moving)
-        {
-            Collider2D[] yieldArea = Physics2D.OverlapCircleAll(
-                transform.position, yieldRadius, _heroLayerMask);
+			if (push.sqrMagnitude > 0.001f)
+			{
+				float scale = moving ? MovingStrengthScale : (inCombat ? 0f : 1f);
+				if (scale > 0f)
+				{
+					Vector3 delta = (Vector3)(push.normalized * separationSpeed * scale * Time.deltaTime);
+					Vector3 newPos = transform.position + delta;
 
-            Vector2 yieldDir = Vector2.zero;
-            int     mySlot   = GetHeroPriority(transform);
+					if (IsWalkableAndOpen(newPos))
+						transform.position = newPos;
+				}
+			}
+		}
 
-            foreach (Collider2D col in yieldArea)
-            {
-                if (col == null || col.gameObject == gameObject) continue;
+		// ── Yield to higher-priority movers ───────────────────────────────────
+		if (!inCombat && !moving)
+		{
+			Collider2D[] yieldArea = Physics2D.OverlapCircleAll(
+				transform.position, yieldRadius, _heroLayerMask);
 
-                // Only yield to heroes with a higher priority (lower slot number).
-                int theirSlot = GetHeroPriority(col.transform);
-                if (theirSlot >= mySlot) continue;
+			Vector2 yieldDir = Vector2.zero;
+			int mySlot = GetHeroPriority(transform);
 
-                // Only yield to heroes that are currently following a path.
-                var otherPF = col.GetComponent<UnitPathFollower>();
-                if (otherPF == null || !otherPF.IsFollowingPath) continue;
+			foreach (Collider2D col in yieldArea)
+			{
+				if (col == null || col.gameObject == gameObject) continue;
 
-                // Sidestep perpendicular to the line toward the approaching hero.
-                // The side is chosen by XOR-ing both instance IDs so the result is
-                // deterministic and identical regardless of which hero evaluates first,
-                // preventing the two heroes from choosing opposite sides and colliding.
-                Vector2 toThem = (Vector2)col.transform.position - (Vector2)transform.position;
-                float   dist   = toThem.magnitude;
-                if (dist < 0.001f) continue;
+				int theirSlot = GetHeroPriority(col.transform);
+				if (theirSlot >= mySlot) continue;
 
-                Vector2 toNorm = toThem / dist;
-                Vector2 perp   = new Vector2(-toNorm.y, toNorm.x); // left-perpendicular
-                float   side   = ((gameObject.GetInstanceID() ^ col.gameObject.GetInstanceID()) & 1) == 0
-                                 ? 1f : -1f;
+				var otherPF = col.GetComponent<UnitPathFollower>();
+				if (otherPF == null || !otherPF.IsFollowingPath) continue;
 
-                // Scale by proximity so the push grows as the other hero closes in.
-                float proximity = 1f - Mathf.Clamp01(dist / yieldRadius);
-                yieldDir += perp * side * proximity;
-            }
+				Vector2 toThem = (Vector2)col.transform.position - (Vector2)transform.position;
+				float dist = toThem.magnitude;
+				if (dist < 0.001f) continue;
 
-            if (yieldDir.sqrMagnitude > 0.001f)
-            {
-                // Mirror the separation block's walkability guard: never step
-                // the yielding hero into a wall tile.  Without this, a hero
-                // pressed toward a wall in a narrow corridor gets nudged into
-                // a non-walkable cell — A* then snaps the start position back
-                // on every call, producing a visible stutter.
-                Vector3 newPos = transform.position +
-                                 (Vector3)(yieldDir.normalized * yieldSpeed * Time.deltaTime);
-                var landingNode = GridGenerator.Instance?.GetNodeAtWorldPosition(newPos);
-                if (landingNode != null && landingNode.isWalkable)
-                    transform.position = newPos;
-            }
-        }
-    }
+				Vector2 toNorm = toThem / dist;
+				Vector2 perp = new Vector2(-toNorm.y, toNorm.x);
+				float side = ((gameObject.GetInstanceID() ^ col.gameObject.GetInstanceID()) & 1) == 0
+								 ? 1f : -1f;
 
-    /// <summary>
-    /// Returns the formation slot index for <paramref name="hero"/>.
-    /// Lower number = higher priority (slot 0 = leader = highest).
-    /// Heroes not registered in FormationManager get a large fallback value so
-    /// they never outrank registered members.
-    /// </summary>
-    private static int GetHeroPriority(Transform hero)
-    {
-        var fm = FormationManager.Instance;
-        if (fm != null)
-        {
-            int slot = fm.GetSlot(hero);
-            if (slot >= 0) return slot;
-        }
-        return 1000 + (Mathf.Abs(hero.GetInstanceID()) & 0xFF);
-    }
+				float proximity = 1f - Mathf.Clamp01(dist / yieldRadius);
+				yieldDir += perp * side * proximity;
+			}
+
+			if (yieldDir.sqrMagnitude > 0.001f)
+			{
+				Vector3 newPos = transform.position +
+								 (Vector3)(yieldDir.normalized * yieldSpeed * Time.deltaTime);
+
+				if (IsWalkableAndOpen(newPos))
+					transform.position = newPos;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Returns true only when <paramref name="worldPos"/> lies on a walkable tile
+	/// AND that tile is not a wall-adjacent inner-corner (3+ wall neighbours).
+	/// Rejecting wall-adjacent inner corners prevents heroes from being nudged into
+	/// the tight cells at the inside of corridor bends, which A* cannot reliably
+	/// path out of and which causes the "stuck in a corner" freeze.
+	/// </summary>
+	private static bool IsWalkableAndOpen(Vector3 worldPos)
+	{
+		var grid = GridGenerator.Instance;
+		if (grid == null) return false;
+
+		var node = grid.GetNodeAtWorldPosition(worldPos);
+		if (node == null || !node.isWalkable) return false;
+
+		// Count non-walkable (wall) neighbours — mirrors the helper in Astar.cs.
+		int walls = 0;
+		foreach (var n in node.neighbors)
+			if (n == null || !n.isWalkable) walls++;
+
+		return walls < WallAdjacentThreshold;
+	}
+
+	private static int GetHeroPriority(Transform hero)
+	{
+		var fm = FormationManager.Instance;
+		if (fm != null)
+		{
+			int slot = fm.GetSlot(hero);
+			if (slot >= 0) return slot;
+		}
+		return 1000 + (Mathf.Abs(hero.GetInstanceID()) & 0xFF);
+	}
 
 #if UNITY_EDITOR
-    private void OnDrawGizmosSelected()
-    {
-        Gizmos.color = new Color(1f, 0.6f, 0f, 0.25f);
-        Gizmos.DrawWireSphere(transform.position, separationRadius);
-        Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.2f);
-        Gizmos.DrawWireSphere(transform.position, yieldRadius);
-    }
+	private void OnDrawGizmosSelected()
+	{
+		Gizmos.color = new Color(1f, 0.6f, 0f, 0.25f);
+		Gizmos.DrawWireSphere(transform.position, separationRadius);
+		Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.2f);
+		Gizmos.DrawWireSphere(transform.position, yieldRadius);
+	}
 #endif
 }
