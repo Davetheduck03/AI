@@ -371,7 +371,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e603a271b38c12c4095092d339c851e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  visionRange: 6
+  visionRange: 5
   updateInterval: 0.5
   visionBlockingLayers:
     serializedVersion: 2

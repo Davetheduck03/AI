@@ -86,7 +86,7 @@ public class FindFogCluster : Node
     // cancels the in-progress path and starts a new one every interval, producing
     // constant twitching with no net forward movement.
     private Vector3 _lastClusterCenter        = new Vector3(float.MaxValue, 0f, 0f);
-    private const float SameClusterThreshold  = 2f;
+    private const float SameClusterThreshold  = 1.5f;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
