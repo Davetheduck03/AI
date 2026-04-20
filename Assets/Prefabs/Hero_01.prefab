@@ -371,13 +371,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e603a271b38c12c4095092d339c851e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  visionRange: 5
-  updateInterval: 0.1
+  visionRange: 6
+  updateInterval: 0.5
   visionBlockingLayers:
     serializedVersion: 2
     m_Bits: 128
-  useFOV: 1
-  fovAngle: 120
+  useFOV: 0
+  fovAngle: 150
   faceMovementDirection: 1
   showDebugGizmos: 1
   visionColor: {r: 1, g: 1, b: 0, a: 0.2}
@@ -394,9 +394,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   fogManager: {fileID: 0}
-  clusterRadius: 4
+  clusterRadius: 5
   minClusterSize: 3
-  sampleDistance: 6
+  sampleDistance: 8
   healthThreshold: 0.5
 --- !u!114 &8906768342283508799
 MonoBehaviour:
