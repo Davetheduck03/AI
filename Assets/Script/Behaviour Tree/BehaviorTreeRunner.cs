@@ -200,8 +200,9 @@ public class BehaviorTreeRunner : MonoBehaviour
         string p = phase.ToLowerInvariant();
         return p.Contains("attack")  || p.Contains("loot")    || p.Contains("item")
             || p.Contains("explore") || p.Contains("extract") || p.Contains("heal")
-            || p.Contains("guard")   || p.Contains("yield")   || p.Contains("fallback");
-        // NOT "follow" or "wait" — those are legitimately stationary.
+            || p.Contains("guard")   || p.Contains("yield")   || p.Contains("fallback")
+            || p.Contains("flee");    // fleeing should make spatial progress
+        // NOT "follow", "wait", or "share" — those are legitimately stationary.
         // NOT "unstuck" — avoid immediately re-triggering on the reset cycle itself.
     }
 
@@ -229,14 +230,25 @@ public class BehaviorTreeRunner : MonoBehaviour
     //   HP       — current / max from HealthComponent
     private void OnGUI()
     {
-        if (!_showDebug) return;
+        // Only the first runner draws UI so we get exactly one panel.
         if (_allRunners.Count == 0 || _allRunners[0] != this) return;
 
         const float panelX  = 10f;
-        const float panelY  = 10f;
+        const float panelY  = 42f;   // offset below the top-left FPS / state text
         const float panelW  = 600f;
         const float rowH    = 22f;
-        float       panelH  = rowH * (_allRunners.Count + 2) + 12f;
+
+        // ── Hint text when panel is hidden ────────────────────────────────────
+        if (!_showDebug)
+        {
+            GUI.color = new Color(1f, 1f, 1f, 0.45f);
+            GUI.Label(new Rect(panelX, panelY, panelW, 20f),
+                      "Press ` to show debug window");
+            GUI.color = Color.white;
+            return;
+        }
+
+        float panelH  = rowH * (_allRunners.Count + 2) + 12f;
 
         // Semi-transparent background
         GUI.color = new Color(0f, 0f, 0f, 0.72f);
@@ -336,10 +348,12 @@ public class BehaviorTreeRunner : MonoBehaviour
 
         string p = phase.ToLowerInvariant();
 
-        if (p.Contains("extract"))                   return new Color(0.0f, 1.0f, 1.0f);  // cyan
+        if (p.Contains("extract"))                    return new Color(0.0f, 1.0f, 1.0f);  // cyan
+        if (p.Contains("flee"))                      return new Color(1.0f, 0.2f, 0.8f);  // magenta — panic
         if (p.Contains("attack"))                    return new Color(1.0f, 0.3f, 0.3f);  // red
         if (p.Contains("heal crit"))                 return new Color(1.0f, 0.5f, 0.1f);  // orange
         if (p.Contains("heal"))                      return new Color(0.3f, 1.0f, 0.4f);  // green
+        if (p.Contains("share"))                     return new Color(0.4f, 1.0f, 0.7f);  // teal-green — generosity
         if (p.Contains("loot") || p.Contains("item")) return new Color(1.0f, 0.9f, 0.2f); // yellow
         if (p.Contains("yield"))                     return new Color(0.6f, 0.6f, 0.6f);  // grey
         if (p.Contains("follow"))                    return new Color(0.4f, 0.7f, 1.0f);  // blue

@@ -62,6 +62,19 @@ public class HealthComponent : UnitComponent
         currentHealth = Mathf.Clamp(currentHealth + amount, 1f, maxHealth);
     }
 
+    /// <summary>
+    /// Scales both maxHealth and currentHealth by <paramref name="multiplier"/>.
+    /// Called by DungeonSpawner after enemy instantiation to apply floor difficulty scaling.
+    /// e.g. multiplier = 1.4 on floor 3 → enemy has 40 % more HP than baseline.
+    /// </summary>
+    public void ScaleHealth(float multiplier)
+    {
+        if (multiplier <= 0f) return;
+        maxHealth     *= multiplier;
+        currentHealth *= multiplier;
+        Debug.Log($"[HealthComponent] {gameObject.name} health scaled ×{multiplier:F2} → {currentHealth:F0}/{maxHealth:F0}");
+    }
+
     public void TakeDamage(DamageData data)
     {
         if (!isDamagable) return;

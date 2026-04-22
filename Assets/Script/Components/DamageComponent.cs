@@ -55,6 +55,18 @@ public class DamageComponent : UnitComponent
 
     // ── Stat modifiers ────────────────────────────
 
+    /// <summary>
+    /// Scales baseDamage by <paramref name="multiplier"/>.
+    /// Called by DungeonSpawner after enemy instantiation to apply floor difficulty scaling.
+    /// e.g. multiplier = 1.3 on floor 3 → enemy deals 30 % more damage than baseline.
+    /// </summary>
+    public void ScaleDamage(float multiplier)
+    {
+        if (multiplier <= 0f) return;
+        baseDamage *= multiplier;
+        Debug.Log($"[DamageComponent] {gameObject.name} damage scaled ×{multiplier:F2} → {TotalDamage:F1} total");
+    }
+
     public void AddDamageBonus(float amount)
     {
         damageBonus += amount;

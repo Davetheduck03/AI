@@ -40,10 +40,25 @@ public class DungeonSpawner : MonoBehaviour
     [Tooltip("This item is guaranteed to drop from exactly one chest per dungeon.")]
     [SerializeField] private ItemSO relicItem;
 
+    [Header("Potion Drops")]
+    [Tooltip("Health potion SO that chests can randomly drop (50 % chance per chest).")]
+    [SerializeField] private HealthPotionSO healthPotionDrop;
+    [Tooltip("Mana potion SO that chests can randomly drop (50 % chance per chest).")]
+    [SerializeField] private ManaPotionSO   manaPotionDrop;
+
     [Header("Spawn Counts")]
-    [SerializeField] private int chestsPerMap     = 4;
+    [SerializeField] private int chestsPerMap      = 4;
     [SerializeField] private int minEnemiesPerRoom = 1;
     [SerializeField] private int maxEnemiesPerRoom = 3;
+
+    [Header("Enemy Count Scaling")]
+    [Tooltip("Extra enemies added to both min and max per completed floor. " +
+             "0.5 = one extra enemy every 2 floors (rounded).")]
+    [SerializeField] private float enemiesScalePerFloor = 0.5f;
+
+    [Tooltip("Extra enemies added to both min and max per additional hero. " +
+             "0.5 = one extra enemy every 2 heroes above 1.")]
+    [SerializeField] private float enemiesScalePerHero  = 0.5f;
 
     // ─── Runtime State ─────────────────────────────────────────────────────
 
@@ -103,11 +118,26 @@ public class DungeonSpawner : MonoBehaviour
         // ── Pick rooms for chests (not start room) ──
         List<int> chestRooms = ShuffledRange(1, roomCount - 1, Mathf.Min(chestsPerMap, roomCount - 1));
 
-        // ── Enemies in non-start, non-chest rooms ──
+        // ── Enemies in non-start rooms (scaled by floor + party size) ──
+        // Base counts from Inspector grow each floor and with more heroes so
+        // the dungeon stays challenging even as the party gets stronger gear.
+        var  prog       = RunProgressionManager.Instance;
+        int  floor      = prog != null ? prog.FloorNumber : 1;
+        int  heroes     = _heroes.Count > 0 ? _heroes.Count : 1;
+
+        int floorBonus  = Mathf.RoundToInt((floor  - 1) * enemiesScalePerFloor);
+        int heroBonus   = Mathf.RoundToInt((heroes - 1) * enemiesScalePerHero);
+        int scaledMin   = minEnemiesPerRoom + floorBonus + heroBonus;
+        int scaledMax   = maxEnemiesPerRoom + floorBonus + heroBonus;
+
+        Debug.Log($"[DungeonSpawner] Enemy count — base [{minEnemiesPerRoom},{maxEnemiesPerRoom}] " +
+                  $"+ floor bonus {floorBonus} + hero bonus {heroBonus} " +
+                  $"= [{scaledMin},{scaledMax}] per room (floor {floor}, {heroes} hero(es))");
+
         for (int i = 1; i < roomCount; i++)
         {
             //if (chestRooms.Contains(i)) continue;
-            int count = UnityEngine.Random.Range(minEnemiesPerRoom, maxEnemiesPerRoom + 1);
+            int count = UnityEngine.Random.Range(scaledMin, scaledMax + 1);
             for (int e = 0; e < count; e++)
                 SpawnEnemy(gen.GetRandomPositionInRoom(i));
         }
@@ -215,6 +245,30 @@ public class DungeonSpawner : MonoBehaviour
 
         var obj = Instantiate(prefab, pos, Quaternion.identity);
         _spawned.Add(obj);
+
+        // ── Difficulty scaling (floor × party size) ───────────────────────────
+        // Floor 1 + 1 hero = ×1.0 baseline.
+        // More heroes → enemies grow to match the extra DPS and healing power.
+        // More floors  → enemies grow with dungeon depth.
+        var prog = RunProgressionManager.Instance;
+        if (prog != null)
+        {
+            int partySize = _heroes.Count > 0 ? _heroes.Count : 1;
+            float hpMult  = prog.GetHealthMultiplier(partySize);
+            float dmgMult = prog.GetDamageMultiplier(partySize);
+
+            // Only actually apply if scaling is non-trivial (avoids unnecessary calls
+            // on floor 1 with a solo hero where both multipliers are exactly 1.0).
+            if (hpMult > 1.001f)
+                obj.GetComponent<HealthComponent>()?.ScaleHealth(hpMult);
+            if (dmgMult > 1.001f)
+                obj.GetComponent<DamageComponent>()?.ScaleDamage(dmgMult);
+
+            if (hpMult > 1.001f || dmgMult > 1.001f)
+                Debug.Log($"[DungeonSpawner] {obj.name} scaled — " +
+                          $"HP ×{hpMult:F2}, DMG ×{dmgMult:F2} " +
+                          $"(floor {prog.FloorNumber}, {partySize} hero(es))");
+        }
     }
 
     private void SpawnChest(Vector3 pos, bool withRelic)
@@ -231,6 +285,9 @@ public class DungeonSpawner : MonoBehaviour
         if (!withRelic && defaultLootTable != null) lootable.SetLootTable(defaultLootTable);
         if (worldItemPrefab != null) lootable.SetWorldItemPrefab(worldItemPrefab);
         if (withRelic && relicItem != null) lootable.SetGuaranteedItem(relicItem);
+
+        // Wire up potion drop SO references so Lootable can roll for a bonus potion
+        lootable.SetPotionDrops(healthPotionDrop, manaPotionDrop);
     }
 
     // ─── Cleanup ──────────────────────────────────────────────────────────

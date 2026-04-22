@@ -2,23 +2,35 @@ using UnityEngine;
 
 /// <summary>
 /// CONDITION/ACTION: Scans teammates for an ally below <paramref name="healthThreshold"/>
-/// and writes the most injured one's Transform to bb[<paramref name="targetKey"/>].
+/// and writes the highest-urgency one's Transform to bb[<paramref name="targetKey"/>].
+///
+/// TARGET SELECTION — FUZZY URGENCY
+///   Previously the node picked the ally with the lowest raw HP fraction.
+///   This caused the healer to chase a 60 % ally across the map while ignoring
+///   a 50 % ally standing right next to it (because 50 > 60 raw, but the nearby
+///   ally is a far better use of a cast).
+///
+///   Now each candidate gets a fuzzy urgency score that combines:
+///     hpUrgency  — RampDown(hpFraction, 0, threshold)  → 1 near death, 0 at threshold
+///     proximity  — RampDown(distance,   0, searchRange) → 1 at self, 0 at edge of range
+///     score      — And(hpUrgency, proximity)            → both must be high to win
+///
+///   This means a critically wounded ally nearby almost always wins, but a
+///   far-away ally at 5 % HP still beats a nearby ally at 60 % HP because
+///   hpUrgency(0.05) = ~0.93 beats hpUrgency(0.60) = ~0.20 even after the
+///   distance penalty.
 ///
 /// Returns Success when an injured ally is found.
 /// Returns Failure when everyone is healthy (or no allies are in range).
-///
-/// Heal-target key defaults to "healTarget" so it never collides with bb["target"]
-/// used by the combat sequences.
 /// </summary>
 public class FindInjuredAlly : Node
 {
-    private readonly float  _healthThreshold;   // 0–1 fraction below which a heal is needed
+    private readonly float  _healthThreshold;
     private readonly float  _searchRange;
     private readonly string _targetKey;
     private readonly bool   _includeSelf;
 
-    /// <param name="healthThreshold">HP fraction (0–1) at or below which a hero needs healing.
-    ///   e.g. 0.7 = heal anyone below 70 % health.</param>
+    /// <param name="healthThreshold">HP fraction (0–1) at or below which a hero needs healing.</param>
     /// <param name="searchRange">World-unit radius to scan for injured allies.</param>
     /// <param name="targetKey">Blackboard key to write the chosen ally's Transform into.</param>
     /// <param name="includeSelf">If true, the caster can target themselves when injured.</param>
@@ -41,8 +53,8 @@ public class FindInjuredAlly : Node
 
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
 
-        Transform mostInjured      = null;
-        float     lowestHPFraction = float.MaxValue;
+        Transform bestTarget   = null;
+        float     bestUrgency  = -1f;
 
         foreach (GameObject p in players)
         {
@@ -58,22 +70,30 @@ public class FindInjuredAlly : Node
             float fraction = hc.currentHealth / hc.maxHealth;
             if (fraction >= _healthThreshold) continue;   // healthy enough — skip
 
-            if (fraction < lowestHPFraction)
+            // ── Fuzzy urgency score ───────────────────────────────────────────
+            // hpUrgency:  approaches 1 as HP → 0, reaches 0 at threshold
+            // proximity:  approaches 1 as distance → 0, reaches 0 at searchRange
+            // Combined via AND (min) so BOTH being high is required for high score.
+            float hpUrgency = FuzzyLogic.RampDown(fraction, 0f, _healthThreshold);
+            float proximity = FuzzyLogic.RampDown(dist, 0f, _searchRange);
+            float urgency   = FuzzyLogic.And(hpUrgency, proximity);
+
+            if (urgency > bestUrgency)
             {
-                lowestHPFraction = fraction;
-                mostInjured      = p.transform;
+                bestUrgency = urgency;
+                bestTarget  = p.transform;
             }
         }
 
-        if (mostInjured == null)
+        if (bestTarget == null)
         {
             bb.Set<Transform>(_targetKey, null);
             return NodeState.Failure;
         }
 
-        bb.Set(_targetKey, mostInjured);
-        Debug.Log($"[FindInjuredAlly] {self.name} targeting {mostInjured.name} " +
-                  $"({lowestHPFraction:P0} HP)");
+        bb.Set(_targetKey, bestTarget);
+        Debug.Log($"[FindInjuredAlly] {self.name} targeting {bestTarget.name} " +
+                  $"(urgency {bestUrgency:F2})");
         return NodeState.Success;
     }
 }

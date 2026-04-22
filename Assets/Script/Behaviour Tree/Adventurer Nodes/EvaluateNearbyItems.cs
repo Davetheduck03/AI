@@ -62,6 +62,10 @@ public class EvaluateNearbyItems : Node
 
 			ItemSO candidate = worldItem.item;
 
+			// Potions are picked up on contact (like relics) — not via BT evaluation.
+			// Skipping them here prevents heroes from making unnecessary detours.
+			if (candidate is PotionSO) continue;
+
 			// Skip weapons this hero class cannot equip
 			if (candidate is WeaponSO weapon && adventurerClass != null)
 			{

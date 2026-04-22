@@ -207,6 +207,21 @@ public class KiteAndAttack : Node
 		if (hasLOS && dist <= effectiveAttackRange &&
 			Time.time - _lastAttackTime >= damageComp.AttackCooldown)
 		{
+			// ── Mana check ────────────────────────────────────────────────────
+			// attackManaCost is 0 on all classes except the Mage (set in Inspector).
+			// If the Mage is out of mana, skip the attack this tick but keep kiting
+			// so it doesn't just stand frozen — it will fire again once mana regens.
+			var manaComp = self.GetComponent<ManaComponent>();
+			if (manaComp != null && manaComp.attackManaCost > 0f)
+			{
+				if (!manaComp.UseMana(manaComp.attackManaCost))
+				{
+					Debug.Log($"[KiteAndAttack] {self.name} — out of mana " +
+					          $"({manaComp.currentMana:F0}/{manaComp.maxMana}), skipping attack");
+					return NodeState.Running;   // still in combat, just can't fire yet
+				}
+			}
+
 			// Cache name before damage (the GO may be destroyed inside TryDealDamage)
 			string enemyName = _enemy.name;
 

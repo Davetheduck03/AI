@@ -14,6 +14,13 @@ public class Lootable : MonoBehaviour
 	         "Set at runtime by DungeonSpawner to guarantee the Relic drops from one chest.")]
 	[SerializeField] private ItemSO guaranteedItem;
 
+	[Header("Potion Drop")]
+	[Tooltip("50 % chance a potion also drops from this chest. Set via DungeonSpawner.")]
+	[Range(0f, 1f)]
+	[SerializeField] private float potionDropChance = 0.5f;
+	[SerializeField] private HealthPotionSO healthPotionDrop;
+	[SerializeField] private ManaPotionSO   manaPotionDrop;
+
 	[Header("UI References")]
 	[SerializeField] private GameObject lootBarUI;
 	[SerializeField] private Image fillImage;
@@ -61,6 +68,17 @@ public class Lootable : MonoBehaviour
 	public void SetLootTable(LootTable table)          => lootTable       = table;
 	public void SetWorldItemPrefab(GameObject prefab)  => worldItemPrefab = prefab;
 	public void SetGuaranteedItem(ItemSO item)         => guaranteedItem  = item;
+
+	/// <summary>
+	/// Wires up the potions that can drop from this chest.
+	/// Called by DungeonSpawner at spawn time so the SOs don't need to be
+	/// hand-assigned on every chest prefab in the Inspector.
+	/// </summary>
+	public void SetPotionDrops(HealthPotionSO hp, ManaPotionSO mp)
+	{
+		healthPotionDrop = hp;
+		manaPotionDrop   = mp;
+	}
 
 	// ─── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -121,12 +139,38 @@ public class Lootable : MonoBehaviour
 		if (guaranteedItem != null)
 			SpawnWorldItem(guaranteedItem);
 
-		// Regular loot table roll
+		// Regular loot table roll — equipment piece
 		if (lootTable != null)
 		{
 			ItemSO drop = lootTable.Roll();
 			if (drop != null) SpawnWorldItem(drop);
 		}
+
+		// 50 % chance to also drop one potion (health or mana, chosen randomly)
+		if (UnityEngine.Random.value < potionDropChance)
+		{
+			ItemSO potion = PickRandomPotion();
+			if (potion != null)
+			{
+				SpawnWorldItem(potion);
+				Debug.Log($"[Lootable] Bonus potion drop: {potion.itemName}");
+			}
+		}
+	}
+
+	/// <summary>
+	/// Returns a random potion from the ones configured for this chest.
+	/// Falls back to whichever type is available if only one is assigned.
+	/// </summary>
+	private ItemSO PickRandomPotion()
+	{
+		bool hasHP   = healthPotionDrop != null;
+		bool hasMana = manaPotionDrop   != null;
+
+		if (hasHP && hasMana) return UnityEngine.Random.value < 0.5f ? (ItemSO)healthPotionDrop : manaPotionDrop;
+		if (hasHP)            return healthPotionDrop;
+		if (hasMana)          return manaPotionDrop;
+		return null;
 	}
 
 	private void SpawnWorldItem(ItemSO itemSO)

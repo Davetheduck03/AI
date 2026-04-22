@@ -19,6 +19,12 @@ public class WeaponSO : ItemSO
     public float damageBonus;
     public float attackSpeedBonus;  // Added to unit's baseAttackSpeed
 
+    [Header("Healing (Staff only)")]
+    [Tooltip("Extra flat healing added on top of the caster's TotalDamage when a Healer casts HealTarget.\n" +
+             "Has no effect on non-Staff weapons or on attack damage.\n" +
+             "Example: Staff with damageBonus=5 healingBonus=8 → Mage attacks for base+5, Healer heals for base+5+8.")]
+    public float healingBonus;
+
     [Header("Range")]
     [Tooltip("Attack range for this weapon. 0 = use the hero's base range from HeroSO.\n" +
              "Balanced tiers: Bow 4.5 | Staff 3.5 | LongSword 3.0 | Sword 2.5 | Dagger 1.5")]

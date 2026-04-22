@@ -61,4 +61,8 @@ MonoBehaviour:
     weight: 5
   - item: {fileID: 11400000, guid: 818f615008fc9304eb5f33645d8be2a1, type: 2}
     weight: 5
+  - item: {fileID: 11400000, guid: 0f0539308fd6cfc47bc6500cab09aa31, type: 2}
+    weight: 25
+  - item: {fileID: 11400000, guid: 797da36d74e932646bf3b5d586009983, type: 2}
+    weight: 25
   dropChance: 100

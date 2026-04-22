@@ -39,6 +39,18 @@ public class HeroEquipmentUI : MonoBehaviour
     [SerializeField] private Image relicIcon;
     [SerializeField] private TextMeshProUGUI relicName;
 
+    [Header("Health Potion Slots")]
+    [SerializeField] private Image           hpPotion1Icon;
+    [SerializeField] private TextMeshProUGUI hpPotion1Count;
+    [SerializeField] private Image           hpPotion2Icon;
+    [SerializeField] private TextMeshProUGUI hpPotion2Count;
+
+    [Header("Mana Potion Slots")]
+    [SerializeField] private Image           manaPotion1Icon;
+    [SerializeField] private TextMeshProUGUI manaPotion1Count;
+    [SerializeField] private Image           manaPotion2Icon;
+    [SerializeField] private TextMeshProUGUI manaPotion2Count;
+
     [Header("Empty Slot")]
     [Tooltip("Sprite shown when a slot has no item equipped.")]
     [SerializeField] private Sprite emptySlotSprite;
@@ -56,6 +68,12 @@ public class HeroEquipmentUI : MonoBehaviour
     private ItemSO _lastHead;
     private ItemSO _lastBody;
     private ItemSO _lastRelic;
+
+    // Potion caches — store SO + count so a stack change also triggers a redraw
+    private HealthPotionSO _lastHP1;   private int _lastHP1Count;
+    private HealthPotionSO _lastHP2;   private int _lastHP2Count;
+    private ManaPotionSO   _lastMP1;   private int _lastMP1Count;
+    private ManaPotionSO   _lastMP2;   private int _lastMP2Count;
 
     private void Start()
     {
@@ -92,6 +110,28 @@ public class HeroEquipmentUI : MonoBehaviour
         {
             _lastRelic = heroEquipment.equippedRelic;
             RefreshSlot(relicIcon, relicName, _lastRelic);
+        }
+
+        // ── Potion slots ──────────────────────────────────────────────────────
+        if (heroEquipment.equippedHealthPotion  != _lastHP1 || heroEquipment.healthPotionCount  != _lastHP1Count)
+        {
+            _lastHP1 = heroEquipment.equippedHealthPotion;  _lastHP1Count = heroEquipment.healthPotionCount;
+            RefreshPotionSlot(hpPotion1Icon, hpPotion1Count, _lastHP1, _lastHP1Count);
+        }
+        if (heroEquipment.equippedHealthPotion2 != _lastHP2 || heroEquipment.healthPotionCount2 != _lastHP2Count)
+        {
+            _lastHP2 = heroEquipment.equippedHealthPotion2; _lastHP2Count = heroEquipment.healthPotionCount2;
+            RefreshPotionSlot(hpPotion2Icon, hpPotion2Count, _lastHP2, _lastHP2Count);
+        }
+        if (heroEquipment.equippedManaPotion    != _lastMP1 || heroEquipment.manaPotionCount    != _lastMP1Count)
+        {
+            _lastMP1 = heroEquipment.equippedManaPotion;    _lastMP1Count = heroEquipment.manaPotionCount;
+            RefreshPotionSlot(manaPotion1Icon, manaPotion1Count, _lastMP1, _lastMP1Count);
+        }
+        if (heroEquipment.equippedManaPotion2   != _lastMP2 || heroEquipment.manaPotionCount2   != _lastMP2Count)
+        {
+            _lastMP2 = heroEquipment.equippedManaPotion2;   _lastMP2Count = heroEquipment.manaPotionCount2;
+            RefreshPotionSlot(manaPotion2Icon, manaPotion2Count, _lastMP2, _lastMP2Count);
         }
 
         // Live damage total — poll DamageTracker every frame (cheap dictionary lookup).
@@ -144,6 +184,16 @@ public class HeroEquipmentUI : MonoBehaviour
         RefreshSlot(headIcon,   headName,   _lastHead);
         RefreshSlot(bodyIcon,   bodyName,   _lastBody);
         RefreshSlot(relicIcon,  relicName,  _lastRelic);
+
+        _lastHP1 = heroEquipment.equippedHealthPotion;  _lastHP1Count = heroEquipment.healthPotionCount;
+        _lastHP2 = heroEquipment.equippedHealthPotion2; _lastHP2Count = heroEquipment.healthPotionCount2;
+        _lastMP1 = heroEquipment.equippedManaPotion;    _lastMP1Count = heroEquipment.manaPotionCount;
+        _lastMP2 = heroEquipment.equippedManaPotion2;   _lastMP2Count = heroEquipment.manaPotionCount2;
+
+        RefreshPotionSlot(hpPotion1Icon,   hpPotion1Count,   _lastHP1, _lastHP1Count);
+        RefreshPotionSlot(hpPotion2Icon,   hpPotion2Count,   _lastHP2, _lastHP2Count);
+        RefreshPotionSlot(manaPotion1Icon, manaPotion1Count, _lastMP1, _lastMP1Count);
+        RefreshPotionSlot(manaPotion2Icon, manaPotion2Count, _lastMP2, _lastMP2Count);
     }
 
     private void RefreshSlot(Image iconImage, TextMeshProUGUI nameLabel, ItemSO item)
@@ -156,5 +206,18 @@ public class HeroEquipmentUI : MonoBehaviour
 
         if (nameLabel != null)
             nameLabel.text = item != null ? item.itemName : "Empty";
+    }
+
+    /// <summary>
+    /// Refreshes a potion slot: shows the potion icon and "xN" stack count,
+    /// or switches to the empty sprite with a blank count when the slot is unused.
+    /// </summary>
+    private void RefreshPotionSlot(Image iconImage, TextMeshProUGUI countLabel, PotionSO potion, int count)
+    {
+        if (iconImage != null)
+            iconImage.sprite = potion != null ? potion.Icon : emptySlotSprite;
+
+        if (countLabel != null)
+            countLabel.text = potion != null && count > 0 ? $"x{count}" : string.Empty;
     }
 }

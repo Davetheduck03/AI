@@ -19,4 +19,5 @@ MonoBehaviour:
   weaponType: 2
   damageBonus: 10
   attackSpeedBonus: 0.35
+  healingBonus: 5
   range: 5.5

@@ -44,6 +44,11 @@ public class RoundState_PartySelect : RoundState_Base
 
         Debug.Log($"[RoundState_PartySelect] Party confirmed ({PartyData.Instance.SelectedParty.Count} heroes). Generating dungeon…");
 
+        // Reset floor progression so each fresh run starts at floor 1.
+        // (On a Win flow the player never reaches PartySelect, so this only
+        //  fires after a wipe — safe to reset unconditionally here.)
+        RunProgressionManager.Instance?.ResetProgress();
+
         // Generate a fresh dungeon. DungeonSpawner.SpawnAll() fires automatically
         // once GridGenerator.OnGridGenerated fires at end-of-frame.
         DungeonGenerator.Instance?.Regenerate();

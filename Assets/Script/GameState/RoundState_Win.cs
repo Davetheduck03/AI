@@ -16,6 +16,10 @@ public class RoundState_Win : RoundState_Base
     {
         Debug.Log("[RoundState_Win] Hero extracted with the Relic — generating next floor.");
 
+        // Advance the floor counter BEFORE SpawnAll runs so enemies on the new
+        // floor are already scaled when DungeonSpawner.SpawnEnemy() is called.
+        RunProgressionManager.Instance?.IncrementFloor();
+
         // 1. Destroy enemies, chests, and world items; keep all surviving heroes alive.
         DungeonSpawner.Instance?.CleanupExceptHeroes();
 

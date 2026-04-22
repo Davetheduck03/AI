@@ -100,6 +100,31 @@ public class WorldItem : MonoBehaviour
 			return;
 		}
 
+		// ── Health potion pickup ──────────────────────────────────────────
+		// Potions are contact-picked, like relics — no BT detour required.
+		if (_item is HealthPotionSO healthPotion)
+		{
+			EquipmentComponent eq = other.GetComponent<EquipmentComponent>();
+			if (eq != null && eq.TryAddHealthPotion(healthPotion))
+			{
+				Debug.Log($"[WorldItem] {other.name} picked up {healthPotion.itemName}");
+				Destroy(gameObject);
+			}
+			return;
+		}
+
+		// ── Mana potion pickup ────────────────────────────────────────────
+		if (_item is ManaPotionSO manaPotion)
+		{
+			EquipmentComponent eq = other.GetComponent<EquipmentComponent>();
+			if (eq != null && eq.TryAddManaPotion(manaPotion))
+			{
+				Debug.Log($"[WorldItem] {other.name} picked up {manaPotion.itemName}");
+				Destroy(gameObject);
+			}
+			return;
+		}
+
 		// ── Normal equipment ──────────────────────────────────────────────
 		// Equipment is handled exclusively by the behaviour tree:
 		//   EvaluateNearbyItems → MoveTowardsTarget → PickupItem

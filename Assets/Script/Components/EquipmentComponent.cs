@@ -2,19 +2,41 @@ using UnityEngine;
 
 public class EquipmentComponent : UnitComponent
 {
-	public WeaponSO equippedWeapon { get; private set; }
-	public HeadArmorSO equippedHead { get; private set; }
-	public BodyArmorSO equippedBody { get; private set; }
-	public RelicSO equippedRelic { get; private set; }
+	public WeaponSO     equippedWeapon { get; private set; }
+	public HeadArmorSO  equippedHead   { get; private set; }
+	public BodyArmorSO  equippedBody   { get; private set; }
+	public RelicSO      equippedRelic  { get; private set; }
 
-	private HealthComponent healthComp;
-	private DamageComponent damageComp;
-	private AdventurerClassSO adventurerClass;
+	// ── Potion slots ──────────────────────────────────────────────────────
+	// Each potion type has TWO dedicated slots, each stackable to the SO's maxStack.
+	// Pickup fills slot 1 first; when slot 1 is full it overflows into slot 2.
+	// Consuming drains slot 1; when slot 1 empties, slot 2 is promoted into slot 1
+	// so the hero always has a continuous supply without manual slot management.
 
-	private float appliedWeaponDamage = 0f;
+	public HealthPotionSO equippedHealthPotion  { get; private set; }
+	public int            healthPotionCount     { get; private set; }
+	public HealthPotionSO equippedHealthPotion2 { get; private set; }
+	public int            healthPotionCount2    { get; private set; }
+
+	public ManaPotionSO   equippedManaPotion    { get; private set; }
+	public int            manaPotionCount       { get; private set; }
+	public ManaPotionSO   equippedManaPotion2   { get; private set; }
+	public int            manaPotionCount2      { get; private set; }
+
+	// Auto-use thresholds and cooldown
+	private const float AutoHealthPotionThreshold = 0.30f;  // consume when HP < 30 %
+	private const float AutoManaPotionThreshold   = 0.20f;  // consume when mana < 20 %
+	private const float PotionUseCooldown         = 5f;     // seconds between auto-uses
+	private float _nextPotionUseTime = 0f;
+
+	private HealthComponent    healthComp;
+	private DamageComponent    damageComp;
+	private AdventurerClassSO  adventurerClass;
+
+	private float appliedWeaponDamage      = 0f;
 	private float appliedWeaponAttackSpeed = 0f;
-	private float appliedHeadArmor = 0f;
-	private float appliedBodyArmor = 0f;
+	private float appliedHeadArmor         = 0f;
+	private float appliedBodyArmor         = 0f;
 
 	[Header("Loot Drop")]
 	[SerializeField] private GameObject worldItemPrefab;
@@ -48,6 +70,36 @@ public class EquipmentComponent : UnitComponent
 		}
 	}
 
+	// ── Auto-consume potions ──────────────────────────────────────────────
+
+	private void Update()
+	{
+		if (Time.time < _nextPotionUseTime) return;
+
+		// Auto health potion — triggered at critically low HP
+		if (equippedHealthPotion != null && healthPotionCount > 0 && healthComp != null)
+		{
+			float hpFraction = healthComp.currentHealth / healthComp.maxHealth;
+			if (hpFraction < AutoHealthPotionThreshold)
+			{
+				ConsumeHealthPotion();
+				_nextPotionUseTime = Time.time + PotionUseCooldown;
+				return;
+			}
+		}
+
+		// Auto mana potion — triggered at critically low mana
+		if (equippedManaPotion != null && manaPotionCount > 0)
+		{
+			var mana = GetComponent<ManaComponent>();
+			if (mana != null && mana.ManaFraction < AutoManaPotionThreshold)
+			{
+				ConsumeManaPotion();
+				_nextPotionUseTime = Time.time + PotionUseCooldown;
+			}
+		}
+	}
+
 	// ─────────────────────────────────────────────
 	// PUBLIC ENTRY POINTS
 	// ─────────────────────────────────────────────
@@ -60,6 +112,9 @@ public class EquipmentComponent : UnitComponent
 	public bool TryEquipWithAssessment(ItemSO newItem, Vector3 worldItemPosition)
 	{
 		if (newItem == null) return false;
+
+		// Potions are handled by contact pickup, not BT assessment
+		if (newItem is PotionSO) return false;
 
 		float newScore     = newItem.GetScore();
 		float currentScore = GetCurrentScore(newItem);
@@ -93,6 +148,215 @@ public class EquipmentComponent : UnitComponent
 		if (newItem is HeadArmorSO head) return TryEquipHead(head);
 		if (newItem is BodyArmorSO body) return TryEquipBody(body);
 		return false;
+	}
+
+	// ─────────────────────────────────────────────
+	// POTION SLOT MANAGEMENT
+	// ─────────────────────────────────────────────
+
+	/// <summary>
+	/// Adds a health potion, filling slot 1 first and overflowing to slot 2.
+	/// Returns true if the potion was accepted by either slot; false if both are full.
+	/// </summary>
+	public bool TryAddHealthPotion(HealthPotionSO potion)
+	{
+		if (potion == null) return false;
+
+		// ── Slot 1 ────────────────────────────────────────────────────────────
+		if (equippedHealthPotion == null)
+		{
+			equippedHealthPotion = potion;
+			healthPotionCount    = 1;
+			Debug.Log($"[Equipment] {gameObject.name} picked up {potion.itemName} (slot 1) — 1/{potion.maxStack}");
+			return true;
+		}
+		if (healthPotionCount < equippedHealthPotion.maxStack)
+		{
+			healthPotionCount++;
+			Debug.Log($"[Equipment] {gameObject.name} stacked {potion.itemName} (slot 1) — {healthPotionCount}/{equippedHealthPotion.maxStack}");
+			return true;
+		}
+
+		// ── Slot 2 (overflow) ─────────────────────────────────────────────────
+		if (equippedHealthPotion2 == null)
+		{
+			equippedHealthPotion2 = potion;
+			healthPotionCount2    = 1;
+			Debug.Log($"[Equipment] {gameObject.name} picked up {potion.itemName} (slot 2) — 1/{potion.maxStack}");
+			return true;
+		}
+		if (healthPotionCount2 < equippedHealthPotion2.maxStack)
+		{
+			healthPotionCount2++;
+			Debug.Log($"[Equipment] {gameObject.name} stacked {potion.itemName} (slot 2) — {healthPotionCount2}/{equippedHealthPotion2.maxStack}");
+			return true;
+		}
+
+		Debug.Log($"[Equipment] {gameObject.name} both health potion slots full — rejected {potion.itemName}");
+		return false;
+	}
+
+	/// <summary>
+	/// Adds a mana potion, filling slot 1 first and overflowing to slot 2.
+	/// Returns true if the potion was accepted by either slot; false if both are full.
+	/// </summary>
+	public bool TryAddManaPotion(ManaPotionSO potion)
+	{
+		if (potion == null) return false;
+
+		// ── Slot 1 ────────────────────────────────────────────────────────────
+		if (equippedManaPotion == null)
+		{
+			equippedManaPotion = potion;
+			manaPotionCount    = 1;
+			Debug.Log($"[Equipment] {gameObject.name} picked up {potion.itemName} (slot 1) — 1/{potion.maxStack}");
+			return true;
+		}
+		if (manaPotionCount < equippedManaPotion.maxStack)
+		{
+			manaPotionCount++;
+			Debug.Log($"[Equipment] {gameObject.name} stacked {potion.itemName} (slot 1) — {manaPotionCount}/{equippedManaPotion.maxStack}");
+			return true;
+		}
+
+		// ── Slot 2 (overflow) ─────────────────────────────────────────────────
+		if (equippedManaPotion2 == null)
+		{
+			equippedManaPotion2 = potion;
+			manaPotionCount2    = 1;
+			Debug.Log($"[Equipment] {gameObject.name} picked up {potion.itemName} (slot 2) — 1/{potion.maxStack}");
+			return true;
+		}
+		if (manaPotionCount2 < equippedManaPotion2.maxStack)
+		{
+			manaPotionCount2++;
+			Debug.Log($"[Equipment] {gameObject.name} stacked {potion.itemName} (slot 2) — {manaPotionCount2}/{equippedManaPotion2.maxStack}");
+			return true;
+		}
+
+		Debug.Log($"[Equipment] {gameObject.name} both mana potion slots full — rejected {potion.itemName}");
+		return false;
+	}
+
+	/// <summary>
+	/// Removes one health potion from slot 1 WITHOUT healing — used by SharePotion to
+	/// hand the potion to another hero.  Slot 2 is promoted when slot 1 empties.
+	/// Returns the potion SO that was removed, or null if both slots are empty.
+	/// </summary>
+	public HealthPotionSO GiveHealthPotion()
+	{
+		if (equippedHealthPotion == null || healthPotionCount <= 0) return null;
+
+		HealthPotionSO given = equippedHealthPotion;
+		healthPotionCount--;
+
+		// Promote slot 2 → slot 1 when slot 1 empties
+		if (healthPotionCount <= 0)
+		{
+			equippedHealthPotion  = equippedHealthPotion2;
+			healthPotionCount     = healthPotionCount2;
+			equippedHealthPotion2 = null;
+			healthPotionCount2    = 0;
+		}
+
+		Debug.Log($"[Equipment] {gameObject.name} gave away 1× {given.itemName} — " +
+		          $"slot 1 now: {healthPotionCount}");
+		return given;
+	}
+
+	/// <summary>
+	/// Removes one mana potion from slot 1 WITHOUT restoring mana — used by SharePotion.
+	/// Slot 2 is promoted when slot 1 empties.
+	/// Returns the potion SO that was removed, or null if both slots are empty.
+	/// </summary>
+	public ManaPotionSO GiveManaPotion()
+	{
+		if (equippedManaPotion == null || manaPotionCount <= 0) return null;
+
+		ManaPotionSO given = equippedManaPotion;
+		manaPotionCount--;
+
+		// Promote slot 2 → slot 1 when slot 1 empties
+		if (manaPotionCount <= 0)
+		{
+			equippedManaPotion  = equippedManaPotion2;
+			manaPotionCount     = manaPotionCount2;
+			equippedManaPotion2 = null;
+			manaPotionCount2    = 0;
+		}
+
+		Debug.Log($"[Equipment] {gameObject.name} gave away 1× {given.itemName} — " +
+		          $"slot 1 now: {manaPotionCount}");
+		return given;
+	}
+
+	/// <summary>Total health potions across both slots.</summary>
+	public int TotalHealthPotions => healthPotionCount + healthPotionCount2;
+
+	/// <summary>Total mana potions across both slots.</summary>
+	public int TotalManaPotions => manaPotionCount + manaPotionCount2;
+
+	/// <summary>
+	/// Consumes one health potion from slot 1. When slot 1 empties, slot 2 is
+	/// promoted into slot 1 automatically so the hero keeps a continuous supply.
+	/// Returns true if a potion was consumed; false if both slots are empty.
+	/// </summary>
+	public bool ConsumeHealthPotion()
+	{
+		if (equippedHealthPotion == null || healthPotionCount <= 0) return false;
+
+		float heal = equippedHealthPotion.healAmount;
+		healthComp?.Heal(heal, gameObject);
+
+		healthPotionCount--;
+		Debug.Log($"[Equipment] {gameObject.name} drank health potion (+{heal} HP) — " +
+		          $"slot 1: {healthPotionCount} remaining");
+
+		// When slot 1 is drained, promote slot 2 → slot 1
+		if (healthPotionCount <= 0)
+		{
+			equippedHealthPotion  = equippedHealthPotion2;
+			healthPotionCount     = healthPotionCount2;
+			equippedHealthPotion2 = null;
+			healthPotionCount2    = 0;
+
+			if (equippedHealthPotion != null)
+				Debug.Log($"[Equipment] {gameObject.name} slot 2 promoted to slot 1 ({healthPotionCount} potions)");
+		}
+
+		return true;
+	}
+
+	/// <summary>
+	/// Consumes one mana potion from slot 1. When slot 1 empties, slot 2 is
+	/// promoted into slot 1 automatically.
+	/// Returns true if a potion was consumed; false if both slots are empty.
+	/// </summary>
+	public bool ConsumeManaPotion()
+	{
+		if (equippedManaPotion == null || manaPotionCount <= 0) return false;
+
+		float manaRestored = equippedManaPotion.manaAmount;
+		var mana = GetComponent<ManaComponent>();
+		mana?.AddMana(manaRestored);
+
+		manaPotionCount--;
+		Debug.Log($"[Equipment] {gameObject.name} drank mana potion (+{manaRestored} mana) — " +
+		          $"slot 1: {manaPotionCount} remaining");
+
+		// When slot 1 is drained, promote slot 2 → slot 1
+		if (manaPotionCount <= 0)
+		{
+			equippedManaPotion  = equippedManaPotion2;
+			manaPotionCount     = manaPotionCount2;
+			equippedManaPotion2 = null;
+			manaPotionCount2    = 0;
+
+			if (equippedManaPotion != null)
+				Debug.Log($"[Equipment] {gameObject.name} slot 2 promoted to slot 1 ({manaPotionCount} potions)");
+		}
+
+		return true;
 	}
 
 	// ─────────────────────────────────────────────
@@ -198,7 +462,7 @@ public class EquipmentComponent : UnitComponent
 
 		Debug.Log($"[Equipment] {gameObject.name} equipped {newWeapon.itemName} → " +
 				  $"Total: {damageComp?.TotalDamage} dmg, {damageComp?.TotalAttackSpeed}/s, " +
-				  $"Range: {damageComp?.AttackRange}");
+				  $"Range: {damageComp?.AttackRange}, HealBonus: {newWeapon.healingBonus}");
 	}
 
 	private void ForceEquipHead(HeadArmorSO newHead)
@@ -206,8 +470,8 @@ public class EquipmentComponent : UnitComponent
 		if (equippedHead != null)
 			healthComp?.AddArmorBonus(-appliedHeadArmor);
 
-		equippedHead      = newHead;
-		appliedHeadArmor  = newHead.statValue;
+		equippedHead     = newHead;
+		appliedHeadArmor = newHead.statValue;
 		healthComp?.AddArmorBonus(appliedHeadArmor);
 
 		Debug.Log($"[Equipment] {gameObject.name} equipped {newHead.itemName} → " +
@@ -219,8 +483,8 @@ public class EquipmentComponent : UnitComponent
 		if (equippedBody != null)
 			healthComp?.AddArmorBonus(-appliedBodyArmor);
 
-		equippedBody      = newBody;
-		appliedBodyArmor  = newBody.statValue;
+		equippedBody     = newBody;
+		appliedBodyArmor = newBody.statValue;
 		healthComp?.AddArmorBonus(appliedBodyArmor);
 
 		Debug.Log($"[Equipment] {gameObject.name} equipped {newBody.itemName} → " +
@@ -311,10 +575,22 @@ public class EquipmentComponent : UnitComponent
 
 	public void LogLoadout()
 	{
+		string hpSlot1 = equippedHealthPotion  != null ? $"{equippedHealthPotion.itemName} x{healthPotionCount}"   : "none";
+		string hpSlot2 = equippedHealthPotion2 != null ? $"{equippedHealthPotion2.itemName} x{healthPotionCount2}" : "none";
+		string mpSlot1 = equippedManaPotion    != null ? $"{equippedManaPotion.itemName} x{manaPotionCount}"       : "none";
+		string mpSlot2 = equippedManaPotion2   != null ? $"{equippedManaPotion2.itemName} x{manaPotionCount2}"     : "none";
+
 		Debug.Log($"[{gameObject.name} Loadout] " +
 				  $"Weapon: {(equippedWeapon != null ? equippedWeapon.itemName : "none")} | " +
 				  $"Head: {(equippedHead   != null ? equippedHead.itemName   : "none")} | " +
 				  $"Body: {(equippedBody   != null ? equippedBody.itemName   : "none")} | " +
-				  $"Relic: {(equippedRelic  != null ? equippedRelic.itemName  : "none")}");
+				  $"Relic: {(equippedRelic  != null ? equippedRelic.itemName  : "none")} | " +
+				  $"HP Pot [1]: {hpSlot1} [2]: {hpSlot2} | " +
+				  $"Mana Pot [1]: {mpSlot1} [2]: {mpSlot2}");
+	}
+
+	private void OnDisable()
+	{
+		// Potions are not dropped on death/disable — they're consumed silently
 	}
 }

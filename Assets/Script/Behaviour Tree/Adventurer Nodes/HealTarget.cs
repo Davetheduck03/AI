@@ -107,11 +107,34 @@ public class HealTarget : Node
         if (Time.time - _lastHealTime < dc.AttackCooldown)
             return NodeState.Running;   // waiting out cooldown
 
+        // ── Mana check ────────────────────────────────────────────────────────
+        // healManaCost is 0 on all classes except the Healer (where it's set in
+        // the Inspector on the prefab's ManaComponent).  A cost of 0 means free.
+        var manaComp = self.GetComponent<ManaComponent>();
+        if (manaComp != null && manaComp.healManaCost > 0f)
+        {
+            if (!manaComp.UseMana(manaComp.healManaCost))
+            {
+                Debug.Log($"[HealTarget] {self.name} — not enough mana to heal " +
+                          $"({manaComp.currentMana:F0}/{manaComp.maxMana} < {manaComp.healManaCost})");
+                return NodeState.Running;   // wait for regen or a mana potion
+            }
+        }
+
+        // ── Heal amount: base damage + staff healing bonus ────────────────────
+        // The healer's TotalDamage already includes any weapon damageBonus.
+        // staffs additionally expose healingBonus — a separate stat that boosts
+        // healing without affecting the weapon's attack damage.
         float healAmount = dc.TotalDamage;
+        var eq = self.GetComponent<EquipmentComponent>();
+        if (eq?.equippedWeapon is { weaponType: WeaponType.Staff } staffWeapon)
+            healAmount += staffWeapon.healingBonus;
+
         targetHC.Heal(healAmount, self.gameObject);
         _lastHealTime = Time.time;
 
-        Debug.Log($"[HealTarget] {self.name} healed {target.name} for {healAmount:F1} HP");
+        Debug.Log($"[HealTarget] {self.name} healed {target.name} for {healAmount:F1} HP " +
+                  $"(base {dc.TotalDamage:F1} + staff bonus {healAmount - dc.TotalDamage:F1})");
         return NodeState.Success;
     }
 

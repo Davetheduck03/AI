@@ -1,31 +1,32 @@
 using UnityEngine;
 
 /// <summary>
-/// Triggered when the hero dies.
-/// 1. Cleans up all spawned objects and world items.
-/// 2. Regenerates the dungeon layout (new tiles).
-/// 3. Rebuilds the pathfinding grid from the new tiles.
-/// 4. GridGenerator.OnGridGenerated fires at end-of-frame → DungeonSpawner re-spawns everything.
-/// 5. Immediately transitions back to InGame.
+/// Triggered when the entire party is wiped.
 ///
-/// NOTE: If you have a FogOfWarManager with a Reset() method, call it here
-/// between CleanupAll() and Regenerate() so the fog resets to fully hidden.
+/// Flow:
+///   1. Capture the current floor stats from RunProgressionManager.
+///   2. Show the GameOverScreen overlay — the player sees how many floors
+///      they reached/cleared before the world is torn down.
+///   3. GameOverScreen.OnPlayAgain() performs the actual cleanup, resets
+///      progression, and navigates back to party selection.
+///
+/// The dungeon is NOT cleaned up here — it stays visible behind the overlay
+/// so the player can see the world they died in while reading the score.
+/// Cleanup happens inside GameOverScreen when the player presses Play Again.
 /// </summary>
 public class RoundState_Lose : RoundState_Base
 {
     public override void EnterState(GameManager gm)
     {
-        Debug.Log("[RoundState_Lose] Hero died — regenerating dungeon.");
+        var prog = RunProgressionManager.Instance;
+        int floorsCompleted = prog?.FloorsCompleted ?? 0;
+        int floorDiedOn     = prog?.FloorNumber     ?? 1;
 
-        // 1. Destroy all heroes, enemies, chests, and world items
-        DungeonSpawner.Instance?.CleanupAll();
+        Debug.Log($"[RoundState_Lose] Party wiped on floor {floorDiedOn} " +
+                  $"({floorsCompleted} floor(s) cleared). Showing game over screen.");
 
-        // 2. Clear the party selection so the player drafts a fresh team.
-        //    (Dungeon regeneration happens when they confirm their new party.)
-        PartyData.Instance?.ClearParty();
-
-        // 3. Back to party selection
-        gm.SwitchState(gm.PartySelect);
+        // Show the overlay — actual reset is deferred until the player clicks Play Again.
+        GameOverScreen.Show(floorsCompleted, floorDiedOn);
     }
 
     public override void ExitState(GameManager gm)  { }
