@@ -8,7 +8,7 @@ using UnityEngine;
 /// </summary>
 public class RoundState_InGame : RoundState_Base
 {
-    public override void EnterState(GameManager round) { }
-    public override void ExitState(GameManager round)  { }
+    public override void EnterState(GameManager round) { FloorHUD.Show(); }
+    public override void ExitState(GameManager round)  { FloorHUD.Hide(); }
     public override void UpdateState(GameManager round){ }
 }

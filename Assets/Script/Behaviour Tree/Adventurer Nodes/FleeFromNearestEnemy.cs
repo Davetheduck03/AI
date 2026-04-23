@@ -1,66 +1,70 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// ACTION: Fuzzy fear-driven flee behaviour.
+/// ACTION: Fuzzy fear-driven flee behaviour with hysteresis and smart direction.
 ///
-/// HOW IT WORKS
-///   Each tick the node computes a fear score from the hero's current HP:
+/// FEAR SCORE
+///   fear = RampDown(hpFraction, loHP=0.15, hiHP)
+///   Each class passes its own hiHP so personality differences are preserved.
 ///
-///     fear = RampDown(hpFraction, loHP=0.15, hiHP=0.50)
-///            → 1.0 when nearly dead, fades to 0 at 50 % HP or above.
+/// HYSTERESIS
+///   enterThreshold (default 0.35) — fear must EXCEED this to START fleeing.
+///   exitThreshold  (default 0.07) — fear must DROP BELOW this to STOP fleeing.
+///   Hero will not re-engage until healed close to full HP.
 ///
-///   If fear ≥ threshold (default 0.35) AND at least one enemy is within
-///   detectionRange, the hero sprints away from the nearest enemy using
-///   A*-backed pathfinding.
+/// SMART FLEE DIRECTION
+///   Instead of blindly running opposite the nearest enemy, the node samples
+///   16 evenly-spaced directions and scores each by the SUM of distances from
+///   the candidate position to ALL nearby enemies. The highest-scoring direction
+///   is the one leading to the largest enemy-free space — even if it means
+///   sprinting THROUGH a gap between enemies to reach it.
 ///
-/// INTERRUPTION
-///   The root Selector is REACTIVE (evaluates from first child every tick).
-///   Placing FleeFromNearestEnemy BEFORE the attack branch guarantees it
-///   interrupts ongoing combat the moment the hero's HP falls into the fear
-///   band — the attack Sequence's Running state is simply never reached
-///   because the Selector stops at this node first.
+///   Because enemies are not pathfinding obstacles (only walls are), A* will
+///   route the actual path through enemy-occupied tiles. The hero simply runs
+///   past them without fighting — flee has higher priority than attack.
 ///
-/// FLEE TARGET
-///   A hidden child Transform ("FleeMarker") is parented to the hero and
-///   repositioned to the flee destination each tick.  This lets us reuse the
-///   standard MovementComponent.OnTriggerMove API without allocating new
-///   GameObjects on every call.  The marker is auto-destroyed with the hero.
+/// CLUSTER-AWARE RE-PATHING
+///   Re-path triggers are based on the CENTROID of all nearby enemies, not just
+///   the nearest one. This prevents thrashing when enemies mill around each other
+///   while the centroid stays stable.
 ///
-/// RECOVERY
-///   Once fear drops below threshold (healer tops up the hero, or enemies
-///   are out of range) the node returns Failure and the BT falls through to
-///   the combat branch — the hero re-engages automatically.
+/// HOLD AT SAFE SPOT
+///   Once the hero arrives, it holds position — returns Running, waits for HP
+///   to recover. A new path is only requested when the cluster centroid moves > 1.5u.
 ///
-/// CLASS TUNING (shared defaults — tweak per-class in each AI's BuildTree)
-///   loHP = 0.15  → fear is maximal at 15 % HP
-///   hiHP = 0.50  → fear reaches 0 at 50 % HP
-///   threshold = 0.35 → flee kicks in at ~43 % HP
-///                      (RampDown gives 0.35 at hp ≈ 0.43 on the default curve)
+/// PROGRESS CHECKER EXEMPTION
+///   "flee" is excluded from stuckable phases so the hero at a safe spot is not
+///   force-reset.
 /// </summary>
 public class FleeFromNearestEnemy : Node
 {
+    // ── Configuration ─────────────────────────────────────────────────────────
     private readonly float     _loHP;
     private readonly float     _hiHP;
-    private readonly float     _threshold;
+    private readonly float     _enterThreshold;
+    private readonly float     _exitThreshold;
     private readonly float     _detectionRange;
     private readonly float     _fleeDistance;
     private readonly LayerMask _wallLayers;
 
-    // Throttle: re-request a new flee path at most once every N seconds so we
-    // don't hammer the A* solver while already moving.
-    private const float FleePathInterval = 0.35f;
+    // ── Hysteresis state ──────────────────────────────────────────────────────
+    private bool _isFleeing = false;
+
+    // ── Path throttle ─────────────────────────────────────────────────────────
+    private const float FleePathInterval = 0.40f;
     private float       _lastFleeTime    = -999f;
 
-    // Hidden world-space marker — cached once, repositioned every tick.
+    // ── Cluster tracking ──────────────────────────────────────────────────────
+    private Vector2 _lastClusterWhenPathed   = Vector2.positiveInfinity;
+    private const float ClusterMoveThreshold = 1.5f;   // world units before re-pathing
+
+    // ── Direction sampling ────────────────────────────────────────────────────
+    private const int NumDirections = 16;
+
+    // ── Flee marker ───────────────────────────────────────────────────────────
     private Transform _fleeMarker;
 
-    /// <param name="loHPFraction">   HP fraction at which fear reaches 1 (fully panicked).</param>
-    /// <param name="hiHPFraction">   HP fraction at which fear reaches 0 (calm).</param>
-    /// <param name="threshold">      Minimum fear score required to trigger fleeing.</param>
-    /// <param name="detectionRange"> World-unit radius the hero scans for enemies.</param>
-    /// <param name="fleeDistance">   How far (world units) the hero tries to put between
-    ///                               itself and the nearest enemy each path request.</param>
-    /// <param name="wallLayers">     Currently unused — reserved for future LOS checks.</param>
     public FleeFromNearestEnemy(Blackboard bb,
                                 float      loHPFraction   = 0.15f,
                                 float      hiHPFraction   = 0.50f,
@@ -71,7 +75,8 @@ public class FleeFromNearestEnemy : Node
     {
         _loHP           = loHPFraction;
         _hiHP           = hiHPFraction;
-        _threshold      = threshold;
+        _enterThreshold = threshold;
+        _exitThreshold  = threshold * 0.20f;
         _detectionRange = detectionRange;
         _fleeDistance   = fleeDistance;
         _wallLayers     = wallLayers;
@@ -82,100 +87,149 @@ public class FleeFromNearestEnemy : Node
         Transform self = bb.Get<Transform>("self");
         if (self == null) return NodeState.Failure;
 
-        // ── Fear score ───────────────────────────────────────────────────────
+        // ── Fear score ────────────────────────────────────────────────────────
         var hc = self.GetComponent<HealthComponent>();
         if (hc == null) return NodeState.Failure;
 
         float hpFraction = hc.maxHealth > 0f ? hc.currentHealth / hc.maxHealth : 0f;
         float fear       = FuzzyLogic.RampDown(hpFraction, _loHP, _hiHP);
 
-        if (fear < _threshold)
-            return NodeState.Failure;   // healthy enough — fall through to combat
-
-        // ── Nearest enemy ─────────────────────────────────────────────────────
-        Transform nearest = FindNearestEnemy(self);
-        if (nearest == null)
-            return NodeState.Failure;   // nobody to flee from
-
-        // ── Flee destination ──────────────────────────────────────────────────
-        Vector2 selfPos  = self.position;
-        Vector2 enemyPos = nearest.position;
-        Vector2 away     = selfPos - enemyPos;
-
-        // If somehow the hero is exactly on top of the enemy, pick a random direction.
-        if (away.sqrMagnitude < 0.001f)
-            away = Random.insideUnitCircle.normalized;
-
-        Vector2 fleeWorldPos = selfPos + away.normalized * _fleeDistance;
-
-        // Snap the destination to the nearest walkable grid node so the pathfinder
-        // doesn't receive an out-of-bounds or unwalkable target.
-        var grid = GridGenerator.Instance;
-        if (grid != null)
+        // ── Hysteresis gate ───────────────────────────────────────────────────
+        if (!_isFleeing)
         {
-            PathNode fleeNode = grid.GetNodeAtWorldPosition(fleeWorldPos)
-                             ?? grid.GetNearestWalkableNode(fleeWorldPos, maxSearchRadius: 10);
-            if (fleeNode != null)
-                fleeWorldPos = (Vector2)fleeNode.transform.position;
+            if (fear < _enterThreshold)
+                return NodeState.Failure;
+            _isFleeing = true;
+            Debug.Log($"[Flee] {self.name} ENTERED flee " +
+                      $"(fear={fear:F2} ≥ {_enterThreshold:F2}, HP {hpFraction:P0})");
+        }
+        else
+        {
+            if (fear < _exitThreshold)
+            {
+                _isFleeing = false;
+                _lastClusterWhenPathed = Vector2.positiveInfinity;
+                Debug.Log($"[Flee] {self.name} EXITED flee " +
+                          $"(fear={fear:F2} < {_exitThreshold:F2}, HP {hpFraction:P0})");
+                return NodeState.Failure;
+            }
         }
 
-        // ── Move toward flee destination ──────────────────────────────────────
-        EnsureFleeMarker(self);
-        _fleeMarker.position = fleeWorldPos;
+        // ── Collect all nearby enemies ────────────────────────────────────────
+        List<Vector2> enemyPositions = CollectEnemyPositions(self.position);
 
-        if (Time.time - _lastFleeTime >= FleePathInterval)
+        if (enemyPositions.Count == 0)
         {
-            _lastFleeTime = Time.time;
+            // No enemies in range — hold at current position, wait to heal
+            return NodeState.Running;
+        }
+
+        // ── Cluster centroid ──────────────────────────────────────────────────
+        Vector2 centroid = Vector2.zero;
+        foreach (var ep in enemyPositions) centroid += ep;
+        centroid /= enemyPositions.Count;
+
+        float clusterDelta    = Vector2.Distance(centroid, _lastClusterWhenPathed);
+        bool  enoughTime      = Time.time - _lastFleeTime >= FleePathInterval;
+        bool  clusterMoved    = clusterDelta >= ClusterMoveThreshold;
+
+        // Re-path when both the interval has elapsed AND the cluster has shifted
+        if (enoughTime && clusterMoved)
+        {
+            Vector2 selfPos   = self.position;
+            Vector2 safestDir = ComputeSafestDirection(selfPos, enemyPositions);
+            Vector2 fleePos   = selfPos + safestDir * _fleeDistance;
+
+            // Snap to nearest walkable node
+            var grid = GridGenerator.Instance;
+            if (grid != null)
+            {
+                PathNode node = grid.GetNodeAtWorldPosition(fleePos)
+                             ?? grid.GetNearestWalkableNode(fleePos, maxSearchRadius: 10);
+                if (node != null)
+                    fleePos = node.transform.position;
+            }
+
+            EnsureFleeMarker(self);
+            _fleeMarker.position    = fleePos;
+            _lastFleeTime           = Time.time;
+            _lastClusterWhenPathed  = centroid;
 
             var mc = self.GetComponent<MovementComponent>();
             if (mc != null)
                 mc.OnTriggerMove(self, _fleeMarker);
-        }
 
-        Debug.Log($"[FleeFromNearestEnemy] {self.name} fear={fear:F2} (HP {hpFraction:P0})" +
-                  $" — fleeing from {nearest.name}");
+            Debug.Log($"[Flee] {self.name} re-pathing → {fleePos} " +
+                      $"(fear={fear:F2}, {enemyPositions.Count} enemies, " +
+                      $"safest dir={safestDir})");
+        }
 
         return NodeState.Running;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private Transform FindNearestEnemy(Transform self)
+    /// <summary>
+    /// Samples <see cref="NumDirections"/> evenly-spaced directions and returns
+    /// the one whose candidate position (self + dir × fleeDistance) maximises
+    /// the sum of distances to all nearby enemies.
+    ///
+    /// Scoring all enemies simultaneously means:
+    ///   • Surrounded heroes find the gap in the enemy ring.
+    ///   • A hero fleeing one enemy picks the direction most clear of everyone.
+    ///   • The chosen direction may pass THROUGH one enemy to reach open space
+    ///     behind them — A* will path through (enemies are not wall obstacles).
+    /// </summary>
+    private Vector2 ComputeSafestDirection(Vector2 selfPos, List<Vector2> enemies)
     {
-        GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
-        Transform    nearest = null;
-        float        bestDist = float.MaxValue;
+        Vector2 bestDir   = Vector2.down;
+        float   bestScore = float.MinValue;
+
+        for (int i = 0; i < NumDirections; i++)
+        {
+            float   angle     = i * (360f / NumDirections) * Mathf.Deg2Rad;
+            Vector2 dir       = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+            Vector2 candidate = selfPos + dir * _fleeDistance;
+
+            // Sum distances from candidate to every nearby enemy.
+            // Higher total = further from the whole threat cluster.
+            float score = 0f;
+            foreach (var ePos in enemies)
+                score += Vector2.Distance(candidate, ePos);
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestDir   = dir;
+            }
+        }
+
+        return bestDir;
+    }
+
+    private List<Vector2> CollectEnemyPositions(Vector2 origin)
+    {
+        var result  = new List<Vector2>();
+        var enemies = GameObject.FindGameObjectsWithTag("Enemy");
 
         foreach (var e in enemies)
         {
             if (e == null) continue;
-
-            // Skip dead enemies (still present during death animation).
             var ehc = e.GetComponent<HealthComponent>();
             if (ehc != null && ehc.currentHealth <= 0f) continue;
 
-            float dist = Vector2.Distance(self.position, e.transform.position);
-            if (dist > _detectionRange) continue;
-
-            if (dist < bestDist)
-            {
-                bestDist = dist;
-                nearest  = e.transform;
-            }
+            float dist = Vector2.Distance(origin, e.transform.position);
+            if (dist <= _detectionRange)
+                result.Add(e.transform.position);
         }
 
-        return nearest;
+        return result;
     }
 
-    /// <summary>
-    /// Lazily creates a hidden child Transform parented to the hero.
-    /// It is destroyed automatically when the hero GameObject is destroyed.
-    /// </summary>
     private void EnsureFleeMarker(Transform hero)
     {
         if (_fleeMarker != null) return;
-
-        var go = new GameObject($"[FleeMarker]")
+        var go = new GameObject("[FleeMarker]")
         {
             hideFlags = HideFlags.HideInHierarchy | HideFlags.HideInInspector
         };

@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Healer AI — Priority: Extract > Potions > Flee > Heal (fuzzy) > Loot > Items > Follow > Explore.
+/// Healer AI — Priority: Extract > Potions > Flee > Leader Rally > Wary Explore > Heal (fuzzy) > Loot > Items > Follow > Explore.
 ///
 /// HEALING — FUZZY SELECTOR
 ///   The two heal tiers (critical and normal) are now wrapped in a FuzzySelector.
@@ -80,7 +80,13 @@ public class HealerAI : BehaviorTreeRunner
         // critical to party survival, so they should never die in melee.
         // dangerRange is reused for detection — healers use a tighter scan
         // radius than combat classes.
+        //
+        // FOLLOWER OVERRIDE: Inverter(IsLeaderInCombat) suppresses flee when the
+        // leader is fighting — the healer pushes through to support instead.
         var fleeSeq = new LabeledSequence(bb, "3: Flee");
+        var notLeaderInCombat = new Inverter(bb);
+        notLeaderInCombat.AddChild(new IsLeaderInCombat(bb));
+        fleeSeq.AddChild(notLeaderInCombat);
         fleeSeq.AddChild(new FleeFromNearestEnemy(bb,
             loHPFraction:   0.15f,
             hiHPFraction:   0.60f,
@@ -89,7 +95,36 @@ public class HealerAI : BehaviorTreeRunner
             fleeDistance:   9f));
         root.AddChild(fleeSeq);
 
-        // ── Priority 4: HEAL (fuzzy-scored) ──────────────────────────────────
+        // ── Priority 4: LEADER RALLY ──────────────────────────────────────────
+        // Leader-only: find safest position and hold so followers can converge
+        // and receive SharePotion transfers before re-engaging.
+        var rallySeq = new LabeledSequence(bb, "4: Leader Rally");
+        rallySeq.AddChild(new LeaderRally(bb,
+            partyHurtThreshold: 0.60f,
+            enemyScanRange:     dangerRange,
+            rallyDistance:      6f,
+            holdRange:          1.5f));
+        root.AddChild(rallySeq);
+
+        // ── Priority 5: WARY EXPLORE (fuzzy: hurt + threatened → seek safety) ──
+        // Healer personality: the most fearful class — hiHP 0.75 means the Healer
+        // is "not calm" even at 75% HP. Because the Healer uses a tighter danger
+        // radius (dangerRange), the threat ramp is steeper: a nearby enemy in a
+        // tight scan zone scores higher per unit of distance.
+        // Crucially, this fires BEFORE heals — a dying Healer can't help anyone
+        // if it dies trying to reach an injured ally. Get to safety first.
+        var warySeq = new LabeledSequence(bb, "5: Wary Explore");
+        warySeq.AddChild(new WaryExploreGuard(bb,
+            loHPFraction:   0.20f,
+            hiHPFraction:   0.75f,
+            nearDist:       1.5f,
+            detectionRange: dangerRange,
+            threshold:      0.18f));
+        warySeq.AddChild(new FindFogCluster(bb));
+        warySeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
+        root.AddChild(warySeq);
+
+        // ── Priority 6: HEAL (fuzzy-scored) ──────────────────────────────────
         // FuzzySelector scores Critical vs Normal heal every tick and runs whichever
         // is more urgent.  Both scores drop to 0 when no ally needs healing, causing
         // the selector to return Failure and the tree to fall through.
@@ -98,11 +133,11 @@ public class HealerAI : BehaviorTreeRunner
         // A small closure reads it fresh each tick from the tag scan.
         float lowestFraction = 1f;
 
-        var healCritSeq = new LabeledSequence(bb, "4a: Heal Critical");
+        var healCritSeq = new LabeledSequence(bb, "6a: Heal Critical");
         healCritSeq.AddChild(new FindInjuredAlly(bb, criticalHPThreshold, healSearchRange, "healTarget"));
         healCritSeq.AddChild(new HealTarget(bb, healRange, "healTarget"));
 
-        var healNormSeq = new LabeledSequence(bb, "4b: Heal Normal");
+        var healNormSeq = new LabeledSequence(bb, "6b: Heal Normal");
         healNormSeq.AddChild(new FindInjuredAlly(bb, healThreshold, healSearchRange, "healTarget"));
         healNormSeq.AddChild(new HealTarget(bb, healRange, "healTarget"));
 
@@ -126,8 +161,8 @@ public class HealerAI : BehaviorTreeRunner
 
         root.AddChild(healFuzzy);
 
-        // ── Priority 5: LOOT CHESTS ──────────────────────────────────────────
-        var lootSeq = new LabeledSequence(bb, "5: Loot");
+        // ── Priority 7: LOOT CHESTS ──────────────────────────────────────────
+        var lootSeq = new LabeledSequence(bb, "7: Loot");
         lootSeq.AddChild(new IsLeaderOrNearLeader(bb));
         lootSeq.AddChild(new NoRevealedEnemies(bb, healSearchRange, wallLayers));
         lootSeq.AddChild(new FindLootInRange(bb, 10f));
@@ -135,8 +170,8 @@ public class HealerAI : BehaviorTreeRunner
         lootSeq.AddChild(new LootTarget(bb));
         root.AddChild(lootSeq);
 
-        // ── Priority 6: PICK UP WORLD ITEMS ─────────────────────────────────
-        var worldItemSeq = new LabeledSequence(bb, "6: Items");
+        // ── Priority 8: PICK UP WORLD ITEMS ─────────────────────────────────
+        var worldItemSeq = new LabeledSequence(bb, "8: Items");
         worldItemSeq.AddChild(new IsLeaderOrNearLeader(bb));
         worldItemSeq.AddChild(new NoRevealedEnemies(bb, healSearchRange, wallLayers));
         worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 16f));
@@ -144,37 +179,37 @@ public class HealerAI : BehaviorTreeRunner
         worldItemSeq.AddChild(new PickupItem(bb));
         root.AddChild(worldItemSeq);
 
-        // ── Priority 7: YIELD ITEM SPACE ────────────────────────────────────
-        var yieldSeq = new LabeledSequence(bb, "7: Yield Space");
+        // ── Priority 9: YIELD ITEM SPACE ────────────────────────────────────
+        var yieldSeq = new LabeledSequence(bb, "9: Yield Space");
         yieldSeq.AddChild(new YieldItemSpace(bb));
         root.AddChild(yieldSeq);
 
-        // ── Priority 8: PICK UP POTIONS ──────────────────────────────────────
-        var potionSeq = new LabeledSequence(bb, "8: Pickup Potion");
+        // ── Priority 10: PICK UP POTIONS ──────────────────────────────────────
+        var potionSeq = new LabeledSequence(bb, "10: Pickup Potion");
         potionSeq.AddChild(new NoRevealedEnemies(bb, dangerRange, wallLayers));
         potionSeq.AddChild(new FindPotionInRange(bb, 12f));
         potionSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));
         root.AddChild(potionSeq);
 
-        // ── Priority 9: SHARE SURPLUS POTIONS (fuzzy) ────────────────────────
+        // ── Priority 11: SHARE SURPLUS POTIONS (fuzzy, safe moments) ─────────
         // Healer uses dangerRange as the enemy guard distance (more conservative).
-        var sharePotSeq = new LabeledSequence(bb, "9: Share Potion");
+        var sharePotSeq = new LabeledSequence(bb, "11: Share Potion");
         sharePotSeq.AddChild(new NoRevealedEnemies(bb, dangerRange, wallLayers));
         sharePotSeq.AddChild(new SharePotion(bb, searchRange: 10f));
         root.AddChild(sharePotSeq);
 
-        // ── Priority 10: FOLLOW LEADER ────────────────────────────────────────
-        var followSeq = new LabeledSequence(bb, "10: Follow");
+        // ── Priority 12: FOLLOW LEADER ────────────────────────────────────────
+        var followSeq = new LabeledSequence(bb, "12: Follow");
         followSeq.AddChild(new FollowLeader(bb));
         root.AddChild(followSeq);
 
-        // ── Priority 11: WAIT FOR PARTY UPGRADES (leader only) ───────────────
-        var waitSeq = new LabeledSequence(bb, "11: Wait Upgrades");
+        // ── Priority 13: WAIT FOR PARTY UPGRADES (leader only) ───────────────
+        var waitSeq = new LabeledSequence(bb, "13: Wait Upgrades");
         waitSeq.AddChild(new WaitForPartyUpgrades(bb));
         root.AddChild(waitSeq);
 
-        // ── Priority 12: EXPLORE (fallback) ──────────────────────────────────
-        var exploreSeq = new LabeledSequence(bb, "12: Explore");
+        // ── Priority 14: EXPLORE (fallback) ──────────────────────────────────
+        var exploreSeq = new LabeledSequence(bb, "14: Explore");
         exploreSeq.AddChild(new FindFogCluster(bb));
         exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);

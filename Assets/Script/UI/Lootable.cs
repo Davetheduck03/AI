@@ -15,9 +15,9 @@ public class Lootable : MonoBehaviour
 	[SerializeField] private ItemSO guaranteedItem;
 
 	[Header("Potion Drop")]
-	[Tooltip("50 % chance a potion also drops from this chest. Set via DungeonSpawner.")]
+	[Tooltip("25 % chance a potion also drops from this chest. Set via DungeonSpawner.")]
 	[Range(0f, 1f)]
-	[SerializeField] private float potionDropChance = 0.5f;
+	[SerializeField] private float potionDropChance = 0.25f;
 	[SerializeField] private HealthPotionSO healthPotionDrop;
 	[SerializeField] private ManaPotionSO   manaPotionDrop;
 
@@ -146,7 +146,7 @@ public class Lootable : MonoBehaviour
 			if (drop != null) SpawnWorldItem(drop);
 		}
 
-		// 50 % chance to also drop one potion (health or mana, chosen randomly)
+		// 25 % chance to also drop one potion (health or mana, chosen randomly)
 		if (UnityEngine.Random.value < potionDropChance)
 		{
 			ItemSO potion = PickRandomPotion();

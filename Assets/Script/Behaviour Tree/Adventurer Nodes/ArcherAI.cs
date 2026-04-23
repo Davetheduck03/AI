@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Archer AI — Priority: Extract > Potions > Flee > Attack > Guard relic > Loot > Items > Follow > Explore.
+/// Archer AI — Priority: Extract > Potions > Flee > Leader Rally > Wary Explore > Attack > Guard relic > Loot > Items > Follow > Explore.
 ///
 /// Uses AdaptiveAttack so behaviour automatically matches the equipped weapon:
 ///   Bow equipped   → kites at preferred range (normal archer behaviour).
@@ -53,7 +53,13 @@ public class ArcherAI : BehaviorTreeRunner
         // Archer personality: more skittish than melee — hiHP 0.50 means the
         // fear curve reaches 0 at 50 % HP (same as default), matching the
         // Archer's generally cautious combat personality.
+        //
+        // FOLLOWER OVERRIDE: Inverter(IsLeaderInCombat) suppresses flee when the
+        // leader is fighting — followers push through and help instead.
         var fleeSeq = new LabeledSequence(bb, "3: Flee");
+        var notLeaderInCombat = new Inverter(bb);
+        notLeaderInCombat.AddChild(new IsLeaderInCombat(bb));
+        fleeSeq.AddChild(notLeaderInCombat);
         fleeSeq.AddChild(new FleeFromNearestEnemy(bb,
             loHPFraction:   0.15f,
             hiHPFraction:   0.50f,
@@ -62,11 +68,38 @@ public class ArcherAI : BehaviorTreeRunner
             fleeDistance:   7f));   // Archers flee further — they need standoff room
         root.AddChild(fleeSeq);
 
-        // ── Priority 4: ATTACK (adaptive) ────────────────────────────────────
+        // ── Priority 4: LEADER RALLY ──────────────────────────────────────────
+        // Leader-only: find safest position and hold so followers can converge
+        // and receive SharePotion transfers before re-engaging.
+        var rallySeq = new LabeledSequence(bb, "4: Leader Rally");
+        rallySeq.AddChild(new LeaderRally(bb,
+            partyHurtThreshold: 0.60f,
+            enemyScanRange:     enemyDetectionRange,
+            rallyDistance:      7f,
+            holdRange:          1.5f));
+        root.AddChild(rallySeq);
+
+        // ── Priority 5: WARY EXPLORE (fuzzy: hurt + threatened → seek safety) ──
+        // Archer personality: wide detection range means the Archer senses danger
+        // earlier. hiHP 0.70 (calm only above 70% HP) makes them more prone to
+        // diverting when wounded. The Archer already kites, so "wary explore"
+        // extends that cautious instinct to avoid the fight entirely when hurt.
+        var warySeq = new LabeledSequence(bb, "5: Wary Explore");
+        warySeq.AddChild(new WaryExploreGuard(bb,
+            loHPFraction:   0.30f,
+            hiHPFraction:   0.70f,
+            nearDist:       3.0f,
+            detectionRange: enemyDetectionRange,
+            threshold:      0.20f));
+        warySeq.AddChild(new FindFogCluster(bb));
+        warySeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
+        root.AddChild(warySeq);
+
+        // ── Priority 6: ATTACK (adaptive) ────────────────────────────────────
         // FuzzyHPGuard: Archers are fragile — they back off earlier than melee classes.
         // hi=0.70 means the Archer is never fully willing below 70 % HP, and already
         // retreating at ~48 % HP (threshold 0.45 on the ramp).
-        var attackSeq = new LabeledSequence(bb, "4: Attack");
+        var attackSeq = new LabeledSequence(bb, "6: Attack");
         attackSeq.AddChild(new FuzzyHPGuard(bb, loHPFraction: 0.30f, hiHPFraction: 0.70f, threshold: 0.45f));
         attackSeq.AddChild(new SelectCombatTarget(bb, selfDefenseRange: 3f,
                                                   detectionRange: enemyDetectionRange,
@@ -74,14 +107,14 @@ public class ArcherAI : BehaviorTreeRunner
         attackSeq.AddChild(new AdaptiveAttack(bb, enemyLayer, kiteDistance, wallLayers));
         root.AddChild(attackSeq);
 
-        // ── Priority 5: GUARD RELIC CARRIER ─────────────────────────────────
-        var guardSeq = new LabeledSequence(bb, "5: Guard Relic");
+        // ── Priority 7: GUARD RELIC CARRIER ─────────────────────────────────
+        var guardSeq = new LabeledSequence(bb, "7: Guard Relic");
         guardSeq.AddChild(new IsRelicHeldByTeammate(bb, team));
         guardSeq.AddChild(new MoveTowardsTarget(bb, 2f, "relicHolder"));
         root.AddChild(guardSeq);
 
-        // ── Priority 6: LOOT CHESTS ──────────────────────────────────────────
-        var lootSeq = new LabeledSequence(bb, "6: Loot");
+        // ── Priority 8: LOOT CHESTS ──────────────────────────────────────────
+        var lootSeq = new LabeledSequence(bb, "8: Loot");
         lootSeq.AddChild(new IsLeaderOrNearLeader(bb));
         lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         lootSeq.AddChild(new FindLootInRange(bb, 10f));
@@ -89,8 +122,8 @@ public class ArcherAI : BehaviorTreeRunner
         lootSeq.AddChild(new LootTarget(bb));
         root.AddChild(lootSeq);
 
-        // ── Priority 7: PICK UP WORLD ITEMS ─────────────────────────────────
-        var worldItemSeq = new LabeledSequence(bb, "7: Items");
+        // ── Priority 9: PICK UP WORLD ITEMS ─────────────────────────────────
+        var worldItemSeq = new LabeledSequence(bb, "9: Items");
         worldItemSeq.AddChild(new IsLeaderOrNearLeader(bb));
         worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 16f));
@@ -98,36 +131,36 @@ public class ArcherAI : BehaviorTreeRunner
         worldItemSeq.AddChild(new PickupItem(bb));
         root.AddChild(worldItemSeq);
 
-        // ── Priority 8: YIELD ITEM SPACE ────────────────────────────────────
-        var yieldSeq = new LabeledSequence(bb, "8: Yield Space");
+        // ── Priority 10: YIELD ITEM SPACE ────────────────────────────────────
+        var yieldSeq = new LabeledSequence(bb, "10: Yield Space");
         yieldSeq.AddChild(new YieldItemSpace(bb));
         root.AddChild(yieldSeq);
 
-        // ── Priority 9: PICK UP POTIONS ──────────────────────────────────────
-        var potionSeq = new LabeledSequence(bb, "9: Pickup Potion");
+        // ── Priority 11: PICK UP POTIONS ─────────────────────────────────────
+        var potionSeq = new LabeledSequence(bb, "11: Pickup Potion");
         potionSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         potionSeq.AddChild(new FindPotionInRange(bb, 12f));
         potionSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));
         root.AddChild(potionSeq);
 
-        // ── Priority 10: SHARE SURPLUS POTIONS (fuzzy) ───────────────────────
-        var sharePotSeq = new LabeledSequence(bb, "10: Share Potion");
+        // ── Priority 12: SHARE SURPLUS POTIONS (fuzzy, safe moments) ─────────
+        var sharePotSeq = new LabeledSequence(bb, "12: Share Potion");
         sharePotSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         sharePotSeq.AddChild(new SharePotion(bb, searchRange: 10f));
         root.AddChild(sharePotSeq);
 
-        // ── Priority 11: FOLLOW LEADER (followers only) ──────────────────────
-        var followSeq = new LabeledSequence(bb, "11: Follow");
+        // ── Priority 13: FOLLOW LEADER (followers only) ──────────────────────
+        var followSeq = new LabeledSequence(bb, "13: Follow");
         followSeq.AddChild(new FollowLeader(bb));
         root.AddChild(followSeq);
 
-        // ── Priority 12: WAIT FOR PARTY UPGRADES (leader only) ───────────────
-        var waitSeq = new LabeledSequence(bb, "12: Wait Upgrades");
+        // ── Priority 14: WAIT FOR PARTY UPGRADES (leader only) ───────────────
+        var waitSeq = new LabeledSequence(bb, "14: Wait Upgrades");
         waitSeq.AddChild(new WaitForPartyUpgrades(bb));
         root.AddChild(waitSeq);
 
-        // ── Priority 13: EXPLORE (leader + fallback for all) ─────────────────
-        var exploreSeq = new LabeledSequence(bb, "13: Explore");
+        // ── Priority 15: EXPLORE (leader + fallback for all) ─────────────────
+        var exploreSeq = new LabeledSequence(bb, "15: Explore");
         exploreSeq.AddChild(new FindFogCluster(bb));
         exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);

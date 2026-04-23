@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Paladin AI — Priority: Extract > Potions > Flee > Self-Heal(no healer) > Heal > Attack > Follow > Explore.
+/// Paladin AI — Priority: Extract > Potions > Flee > Self-Heal(no healer) > Leader Rally > Wary Explore > Heal > Attack > Follow > Explore.
 ///
 /// The paladin is a hybrid damage/support unit.
 ///
@@ -85,7 +85,13 @@ public class PaladinAI : BehaviorTreeRunner
         // Paladin personality: moderate — same hiHP as Archer (0.50).
         // The Paladin CAN self-heal (priority 4), so it's not as desperate
         // as a pure caster, but it still needs to retreat to cast safely.
+        //
+        // FOLLOWER OVERRIDE: Inverter(IsLeaderInCombat) suppresses flee when the
+        // leader is fighting — followers push through and help instead.
         var fleeSeq = new LabeledSequence(bb, "3: Flee");
+        var notLeaderInCombat = new Inverter(bb);
+        notLeaderInCombat.AddChild(new IsLeaderInCombat(bb));
+        fleeSeq.AddChild(notLeaderInCombat);
         fleeSeq.AddChild(new FleeFromNearestEnemy(bb,
             loHPFraction:   0.15f,
             hiHPFraction:   0.50f,
@@ -108,19 +114,46 @@ public class PaladinAI : BehaviorTreeRunner
         noHealerSelfHeal.AddChild(new HealTarget(bb, healRange, "healTarget"));
         root.AddChild(noHealerSelfHeal);
 
-        // ── Priority 5: HEAL (fuzzy-scored, staff required) ──────────────────
+        // ── Priority 5: LEADER RALLY ──────────────────────────────────────────
+        // Leader-only: find safest position and hold so followers can converge
+        // and receive SharePotion transfers before re-engaging.
+        var rallySeq = new LabeledSequence(bb, "5: Leader Rally");
+        rallySeq.AddChild(new LeaderRally(bb,
+            partyHurtThreshold: 0.60f,
+            enemyScanRange:     enemyDetectionRange,
+            rallyDistance:      7f,
+            holdRange:          1.5f));
+        root.AddChild(rallySeq);
+
+        // ── Priority 6: WARY EXPLORE (fuzzy: hurt + threatened → seek safety) ──
+        // Placed AFTER self-heal (Priority 4) so the Paladin first tops itself up
+        // when no healer exists, THEN checks whether it's still too threatened to
+        // engage. Paladin personality: moderate (same hiHP as Archer, 0.70).
+        // Uses enemyDetectionRange like a combat class, not the tighter healSearchRange.
+        var warySeq = new LabeledSequence(bb, "6: Wary Explore");
+        warySeq.AddChild(new WaryExploreGuard(bb,
+            loHPFraction:   0.25f,
+            hiHPFraction:   0.70f,
+            nearDist:       2.0f,
+            detectionRange: enemyDetectionRange,
+            threshold:      0.20f));
+        warySeq.AddChild(new FindFogCluster(bb));
+        warySeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
+        root.AddChild(warySeq);
+
+        // ── Priority 7: HEAL (fuzzy-scored, staff required) ──────────────────
         // FuzzySelector scores Critical vs Normal heal every tick.
         // Critical score → peaks when someone is near death.
         // Normal score   → active in the band between critical and normal thresholds.
         // When nobody needs healing both scores are 0 → Failure → fall through.
         float lowestFraction = 1f;
 
-        var healCritSeq = new LabeledSequence(bb, "5a: Heal Critical");
+        var healCritSeq = new LabeledSequence(bb, "7a: Heal Critical");
         healCritSeq.AddChild(new HasWeaponType(bb, WeaponType.Staff));
         healCritSeq.AddChild(new FindInjuredAlly(bb, criticalHPThreshold, healSearchRange, "healTarget", includeSelf: true));
         healCritSeq.AddChild(new HealTarget(bb, healRange, "healTarget"));
 
-        var healNormSeq = new LabeledSequence(bb, "5b: Heal Normal");
+        var healNormSeq = new LabeledSequence(bb, "7b: Heal Normal");
         healNormSeq.AddChild(new HasWeaponType(bb, WeaponType.Staff));
         healNormSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         healNormSeq.AddChild(new FindInjuredAlly(bb, healThreshold, healSearchRange, "healTarget", includeSelf: true));
@@ -141,7 +174,7 @@ public class PaladinAI : BehaviorTreeRunner
 
         root.AddChild(healFuzzy);
 
-        // ── Priority 6: ATTACK (party-aware) ─────────────────────────────────
+        // ── Priority 8: ATTACK (party-aware) ─────────────────────────────────
         // Healer alive   → normal FuzzyHPGuard (threshold 0.40): Paladin fights
         //   as long as it's reasonably healthy — a healer will top it up.
         // No healer alive→ tight FuzzyHPGuard (threshold 0.70): Paladin only
@@ -150,7 +183,7 @@ public class PaladinAI : BehaviorTreeRunner
         //   hurt and no healer is available.
         var attackBranch = new Selector(bb);
 
-        var attackWithHealer = new LabeledSequence(bb, "6a: Attack (healer alive)");
+        var attackWithHealer = new LabeledSequence(bb, "8a: Attack (healer alive)");
         attackWithHealer.AddChild(new IsHealerAlive(bb));
         attackWithHealer.AddChild(new FuzzyHPGuard(bb, loHPFraction: 0.25f, hiHPFraction: 0.65f, threshold: 0.40f));
         attackWithHealer.AddChild(new SelectCombatTarget(bb, selfDefenseRange: 3f,
@@ -158,7 +191,7 @@ public class PaladinAI : BehaviorTreeRunner
                                                          wallLayers: wallLayers));
         attackWithHealer.AddChild(new AdaptiveAttack(bb, enemyLayer, kiteDistance, wallLayers));
 
-        var attackNoHealer = new LabeledSequence(bb, "6b: Attack (no healer, cautious)");
+        var attackNoHealer = new LabeledSequence(bb, "8b: Attack (no healer, cautious)");
         attackNoHealer.AddChild(new FuzzyHPGuard(bb, loHPFraction: 0.50f, hiHPFraction: 0.90f, threshold: 0.70f));
         attackNoHealer.AddChild(new SelectCombatTarget(bb, selfDefenseRange: 3f,
                                                        detectionRange: enemyDetectionRange,
@@ -169,8 +202,8 @@ public class PaladinAI : BehaviorTreeRunner
         attackBranch.AddChild(attackNoHealer);
         root.AddChild(attackBranch);
 
-        // ── Priority 7: LOOT CHESTS ──────────────────────────────────────────
-        var lootSeq = new LabeledSequence(bb, "7: Loot");
+        // ── Priority 9: LOOT CHESTS ──────────────────────────────────────────
+        var lootSeq = new LabeledSequence(bb, "9: Loot");
         lootSeq.AddChild(new IsLeaderOrNearLeader(bb));
         lootSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         lootSeq.AddChild(new FindLootInRange(bb, 10f));
@@ -178,8 +211,8 @@ public class PaladinAI : BehaviorTreeRunner
         lootSeq.AddChild(new LootTarget(bb));
         root.AddChild(lootSeq);
 
-        // ── Priority 8: PICK UP WORLD ITEMS ─────────────────────────────────
-        var worldItemSeq = new LabeledSequence(bb, "8: Items");
+        // ── Priority 10: PICK UP WORLD ITEMS ─────────────────────────────────
+        var worldItemSeq = new LabeledSequence(bb, "10: Items");
         worldItemSeq.AddChild(new IsLeaderOrNearLeader(bb));
         worldItemSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         worldItemSeq.AddChild(new EvaluateNearbyItems(bb, searchRange: 16f));
@@ -187,36 +220,36 @@ public class PaladinAI : BehaviorTreeRunner
         worldItemSeq.AddChild(new PickupItem(bb));
         root.AddChild(worldItemSeq);
 
-        // ── Priority 9: YIELD ITEM SPACE ────────────────────────────────────
-        var yieldSeq = new LabeledSequence(bb, "9: Yield Space");
+        // ── Priority 11: YIELD ITEM SPACE ────────────────────────────────────
+        var yieldSeq = new LabeledSequence(bb, "11: Yield Space");
         yieldSeq.AddChild(new YieldItemSpace(bb));
         root.AddChild(yieldSeq);
 
-        // ── Priority 10: PICK UP POTIONS ─────────────────────────────────────
-        var potionSeq = new LabeledSequence(bb, "10: Pickup Potion");
+        // ── Priority 12: PICK UP POTIONS ─────────────────────────────────────
+        var potionSeq = new LabeledSequence(bb, "12: Pickup Potion");
         potionSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         potionSeq.AddChild(new FindPotionInRange(bb, 12f));
         potionSeq.AddChild(new MoveTowardsTarget(bb, 0.5f, "itemTarget"));
         root.AddChild(potionSeq);
 
-        // ── Priority 11: SHARE SURPLUS POTIONS (fuzzy) ───────────────────────
-        var sharePotSeq = new LabeledSequence(bb, "11: Share Potion");
+        // ── Priority 13: SHARE SURPLUS POTIONS (fuzzy, safe moments) ─────────
+        var sharePotSeq = new LabeledSequence(bb, "13: Share Potion");
         sharePotSeq.AddChild(new NoRevealedEnemies(bb, enemyDetectionRange, wallLayers));
         sharePotSeq.AddChild(new SharePotion(bb, searchRange: 10f));
         root.AddChild(sharePotSeq);
 
-        // ── Priority 12: FOLLOW LEADER (followers only) ──────────────────────
-        var followSeq = new LabeledSequence(bb, "12: Follow");
+        // ── Priority 14: FOLLOW LEADER (followers only) ──────────────────────
+        var followSeq = new LabeledSequence(bb, "14: Follow");
         followSeq.AddChild(new FollowLeader(bb));
         root.AddChild(followSeq);
 
-        // ── Priority 13: WAIT FOR PARTY UPGRADES (leader only) ───────────────
-        var waitSeq = new LabeledSequence(bb, "13: Wait Upgrades");
+        // ── Priority 15: WAIT FOR PARTY UPGRADES (leader only) ───────────────
+        var waitSeq = new LabeledSequence(bb, "15: Wait Upgrades");
         waitSeq.AddChild(new WaitForPartyUpgrades(bb));
         root.AddChild(waitSeq);
 
-        // ── Priority 14: EXPLORE (leader + fallback for all) ─────────────────
-        var exploreSeq = new LabeledSequence(bb, "14: Explore");
+        // ── Priority 16: EXPLORE (leader + fallback for all) ─────────────────
+        var exploreSeq = new LabeledSequence(bb, "16: Explore");
         exploreSeq.AddChild(new FindFogCluster(bb));
         exploreSeq.AddChild(new MoveTowardsTarget(bb, 0.5f));
         root.AddChild(exploreSeq);

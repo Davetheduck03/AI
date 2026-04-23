@@ -200,9 +200,10 @@ public class BehaviorTreeRunner : MonoBehaviour
         string p = phase.ToLowerInvariant();
         return p.Contains("attack")  || p.Contains("loot")    || p.Contains("item")
             || p.Contains("explore") || p.Contains("extract") || p.Contains("heal")
-            || p.Contains("guard")   || p.Contains("yield")   || p.Contains("fallback")
-            || p.Contains("flee");    // fleeing should make spatial progress
-        // NOT "follow", "wait", or "share" — those are legitimately stationary.
+            || p.Contains("guard")   || p.Contains("yield")   || p.Contains("fallback");
+        // NOT "follow", "wait", "share", "flee", or "rally":
+        //   flee  — hero may be stationary at safe spot; hysteresis handles exit.
+        //   rally — leader holds intentionally; not a stuck scenario.
         // NOT "unstuck" — avoid immediately re-triggering on the reset cycle itself.
     }
 
@@ -350,6 +351,7 @@ public class BehaviorTreeRunner : MonoBehaviour
 
         if (p.Contains("extract"))                    return new Color(0.0f, 1.0f, 1.0f);  // cyan
         if (p.Contains("flee"))                      return new Color(1.0f, 0.2f, 0.8f);  // magenta — panic
+        if (p.Contains("rally"))                     return new Color(0.0f, 0.8f, 0.5f);  // sea-green — leader holding position
         if (p.Contains("attack"))                    return new Color(1.0f, 0.3f, 0.3f);  // red
         if (p.Contains("heal crit"))                 return new Color(1.0f, 0.5f, 0.1f);  // orange
         if (p.Contains("heal"))                      return new Color(0.3f, 1.0f, 0.4f);  // green
@@ -358,6 +360,7 @@ public class BehaviorTreeRunner : MonoBehaviour
         if (p.Contains("yield"))                     return new Color(0.6f, 0.6f, 0.6f);  // grey
         if (p.Contains("follow"))                    return new Color(0.4f, 0.7f, 1.0f);  // blue
         if (p.Contains("wait") || p.Contains("upgrade")) return new Color(0.8f, 0.4f, 1.0f); // purple
+        if (p.Contains("wary"))                       return new Color(1.0f, 0.65f, 0.0f); // amber — cautious diversion
         if (p.Contains("explore"))                   return new Color(0.2f, 0.9f, 0.8f);  // teal
         if (p.Contains("guard") || p.Contains("relic")) return new Color(1.0f, 0.7f, 0.2f); // amber
         if (p.Contains("fallback") || p.Contains("⚠")) return new Color(1.0f, 0.4f, 0.0f); // orange-red

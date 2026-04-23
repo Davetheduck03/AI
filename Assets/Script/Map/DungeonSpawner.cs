@@ -41,9 +41,9 @@ public class DungeonSpawner : MonoBehaviour
     [SerializeField] private ItemSO relicItem;
 
     [Header("Potion Drops")]
-    [Tooltip("Health potion SO that chests can randomly drop (50 % chance per chest).")]
+    [Tooltip("Health potion SO that chests can randomly drop (25 % chance per chest).")]
     [SerializeField] private HealthPotionSO healthPotionDrop;
-    [Tooltip("Mana potion SO that chests can randomly drop (50 % chance per chest).")]
+    [Tooltip("Mana potion SO that chests can randomly drop (25 % chance per chest).")]
     [SerializeField] private ManaPotionSO   manaPotionDrop;
 
     [Header("Spawn Counts")]
